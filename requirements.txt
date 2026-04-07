@@ -10,4 +10,3 @@ tqdm>=4.65.0
 tensorboard>=2.13.0
 python-docx>=0.8.11
 torchinfo>=1.8.0
-pytorch-msssim>=1.0.0

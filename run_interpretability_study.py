@@ -40,6 +40,8 @@ def train_beta_vae(config: dict):
     if config['checkpoint_path']:
         print(f"Checkpoint path provided: {config['checkpoint_path']}")
         conf_file = Path(config['checkpoint_path']).parent / 'config.json'
+        checkpoint_experiment = Path(config['checkpoint_path']).parent.name
+        config['experiment_name'] = checkpoint_experiment
         if conf_file.exists():
             print(f"Loading training configuration from {conf_file}")
             with open(conf_file, 'r') as f:
