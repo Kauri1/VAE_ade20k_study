@@ -38,7 +38,7 @@ python run_interpretability_study.py --help
 ## Train new checkpoing
 
 ```bash
-python run_interpretability_study.py --experiment_name VAE_study --latent_dim 256 --beta 1.5 --beta_start 0.5 --beta_warmup_epochs 10 --batch_size 64 --num_epochs 30 --concepts bathroom bedroom abbey alley airport_terminal --min_channels 8 --max_channels 128 --num_workers 8
+python run_interpretability_study.py --experiment_name VAE_study2 --latent_dim 256 --beta 1.5 --beta_start 0.5 --beta_warmup_epochs 10 --batch_size 64 --num_epochs 30 --concepts bathroom bedroom abbey alley airport_terminal --min_channels 8 --max_channels 128 --num_workers 8
 ```
 
 ## Train checkpoint more (load weights)
