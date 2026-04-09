@@ -243,7 +243,9 @@ class VAE(nn.Module):
         """
 
         mu, log_var = self.encoder(x)  # Get mean and log variance from encoder
+
         z = self.reparameterize(mu, log_var)  # Sample from the latent distribution
+
         recon_x = self.decoder(z)  # Reconstruct the image from the latent vector
 
         return recon_x, mu, log_var
@@ -339,11 +341,60 @@ def kl_divergence_loss(mu: torch.Tensor, log_var: torch.Tensor) -> torch.Tensor:
     kl_loss = kl_loss.mean()  # Average over the batch
     return kl_loss
 
+def batch_triplet_loss(z: torch.Tensor, labels: torch.Tensor, margin: float = 1.0) -> torch.Tensor:
+    """
+    Compute a triplet loss to encourage the latent representations of images with the same label to be closer together than those with different labels.
+    Args:    
+        z: Latent vectors [batch_size, latent_dim]
+        labels: Image labels [batch_size]
+    Returns:    
+        loss: Triplet loss value
+    """
+
+    triplet_loss = nn.TripletMarginLoss(margin=margin, p=2, reduction='sum')
+
+    anchor_list, positive_list, negative_list = [], [], []
+    for i in range(len(labels)):
+        anchor_label = labels[i]
+
+        pos_indices = torch.where(labels == anchor_label)[0]
+        neg_indices = torch.where(labels != anchor_label)[0]
+
+        pos_indices = pos_indices[pos_indices != i]  # Exclude the anchor itself
+
+        if len(pos_indices) > 0 and len(neg_indices) > 0:
+            pos_index = pos_indices[torch.randint(len(pos_indices), (1,)).item()]
+            neg_index = neg_indices[torch.randint(len(neg_indices), (1,)).item()]
+
+            assert labels[i] == labels[pos_index], "Positive sample does not have the same label as anchor"
+            assert labels[i] != labels[neg_index], "Negative sample does not have a different label from anchor"
+
+            anchor_list.append(z[i])
+            positive_list.append(z[pos_index])
+            negative_list.append(z[neg_index])
+        
+        
+
+    if len(anchor_list) == 0:
+        return torch.tensor(0.0, device=z.device)  # No valid triplets, return zero loss
+
+    z_anchor = torch.stack(anchor_list)
+    z_positive = torch.stack(positive_list)
+    z_negative = torch.stack(negative_list)
+
+    loss = triplet_loss(z_anchor, z_positive, z_negative)
+    return loss
+
+
+
 def vae_loss(x: torch.Tensor, x_recon: torch.Tensor, 
              mu: torch.Tensor, log_var: torch.Tensor,
+             labels: torch.Tensor = None,
              beta: float = 1.0,
              recon_weight: float = 1.0,
-             ssim_weight: float = 0.0
+             ssim_weight: float = 0.0,
+             lweight: float = 0.1,
+
              ) -> Dict[str, torch.Tensor]:
     """Compute the total VAE loss, which is a combination of the pixel reconstruction loss and the KL divergence loss.
 
@@ -355,6 +406,7 @@ def vae_loss(x: torch.Tensor, x_recon: torch.Tensor,
         beta: Weight for the KL divergence loss (default=1.0)
         recon_weight: Weight for the pixel reconstruction loss (default=1.0)
         ssim_weight: Weight for the SSIM loss (default=0.0)
+        lweight: Weight for the label loss (default=0.1)
     Returns:
         loss_dict: Dictionary containing the total loss and individual components
     """
@@ -364,12 +416,15 @@ def vae_loss(x: torch.Tensor, x_recon: torch.Tensor,
     #ssim_loss = 0.0
     #sinkhorn_loss = 0.0
 
-    total_loss = (recon_weight * recon_loss) + (beta * kl_loss)
+    label_loss = batch_triplet_loss(mu, labels) if labels is not None else torch.tensor(0.0, device=x.device)
+
+    total_loss = (recon_weight * recon_loss) + (beta * kl_loss) + (lweight * label_loss)
 
     loss_dict = {
         "total_loss": total_loss,
         "recon_loss": recon_loss,
-        "kl_loss": kl_loss
+        "kl_loss": kl_loss,
+        "label_loss": label_loss
     }
 
     return loss_dict

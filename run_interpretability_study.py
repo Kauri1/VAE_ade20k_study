@@ -83,7 +83,8 @@ def train_beta_vae(config: dict):
         ssim_weight=config['ssim_weight'],
         beta=config['beta'],
         beta_start=config['beta_start'],
-        beta_warmup_epochs=config['beta_warmup_epochs'])
+        beta_warmup_epochs=config['beta_warmup_epochs'],
+        label_distance_loss_weight=config['label_distance_loss_weight'])
 
 
     if config['checkpoint_path']:
@@ -125,6 +126,11 @@ def analyze_latent_space(model: VAE, val_loader: DataLoader, train_loader: DataL
     train_mus = train_mus.to(config['device'])
     train_images = train_images.to(config['device'])
     train_logvars = train_logvars.to(config['device'])
+
+    dataset = val_loader.dataset
+    if hasattr(dataset, 'unique_classes'):
+        labels = [dataset.unique_classes[lbl.item()] for lbl in labels]
+        train_labels = [dataset.unique_classes[lbl.item()] for lbl in train_labels]
     
     print(f"Collected {dataset_images.shape} samples for latent space analysis.")
     print(f"Latent space mean shape: {mus.shape}, logvar shape: {logvars.shape}")
@@ -312,6 +318,7 @@ def main():
     parser.add_argument('--beta_warmup_epochs', type=int, default=10, help='Number of epochs to warm up beta from beta_start to beta')
     parser.add_argument('--recon_weight', type=float, default=1.0, help='Weight for the reconstruction loss')
     parser.add_argument('--ssim_weight', type=float, default=0.0, help='Weight for the SSIM loss')
+    parser.add_argument('--label_distance_loss_weight', type=float, default=0.1, help='Weight for the label distance loss (requires labels in dataset and implementation in model)')
 
     # Training hyperparameters
     parser.add_argument('--batch_size', type=int, default=32, help='Batch size for training and validation')
@@ -346,6 +353,7 @@ def main():
         'beta_warmup_epochs': args.beta_warmup_epochs,
         'recon_weight': args.recon_weight,
         'ssim_weight': args.ssim_weight,
+        'label_distance_loss_weight': args.label_distance_loss_weight,
         'batch_size': args.batch_size,
         'num_epochs': args.num_epochs,
         'img_size': args.img_size,

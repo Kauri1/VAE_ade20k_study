@@ -26,6 +26,8 @@ class ADE20KDataset(Dataset):
         self.split = split
         self.img_size = img_size
 
+    
+
         if transform is None:
             self.transform = transforms.Compose([
                 transforms.Resize((img_size, img_size)),
@@ -50,13 +52,21 @@ class ADE20KDataset(Dataset):
         self.labels_file = self.root_dir / 'sceneCategories.txt'
         if not self.labels_file.exists():
             print(f"Warning: Labels file {self.labels_file} not found. Class labels will be unavailable.")
+
         if split == 'training':
             pr = 'ADE_train_'  # Prefix for training images in labels file
         elif split == 'validation':
             pr = 'ADE_val_'  # Prefix for validation images in labels file
         else:
             pr = ''  # No prefix for other splits (if any)
+
         self.labels = self._get_labels(pr) if self.labels_file.exists() else {}
+
+        all_labels_dict = self._get_labels() if self.labels_file.exists() else {}
+
+        self.unique_classes = sorted(list(set(all_labels_dict.values())))
+        self.unique_classes.append("Unknown") # Fallback
+        self.class_to_idx = {cls_name: idx for idx, cls_name in enumerate(self.unique_classes)}
 
         print(f"Loaded {len(self.labels)} class labels from {self.labels_file}")
         print(f"Example label: {next(iter(self.labels.items())) if self.labels else 'No labels loaded'}")
@@ -122,7 +132,8 @@ class ADE20KDataset(Dataset):
         """
         img_path = self.image_files[idx]
         picture_id = img_path.stem  # Get filename without extension
-        return self.labels.get(picture_id, "Unknown")
+        cat_name = self.labels.get(picture_id, "Unknown")
+        return torch.tensor(self.class_to_idx[cat_name], dtype=torch.long)
     
     def get_all_images_of_label(self, label):
         """

@@ -44,7 +44,8 @@ class VaeTrainer:
                  ssim_weight: float = 0.0,
                  beta: float = 1.0,
                  beta_start: float = 0.0,
-                 beta_warmup_epochs: int = 10,):
+                 beta_warmup_epochs: int = 10,
+                 label_distance_loss_weight: float = 0.1):
         """
         Args:
             model: VAE model to train
@@ -61,6 +62,7 @@ class VaeTrainer:
             beta_warmup_epochs: Number of epochs over which to linearly increase beta from beta_start to beta
             beta: Final weight for KL divergence term in total loss calculation
             beta_start: Initial weight for KL divergence term at the start of training (will be linearly increased to beta)
+            label_distance_loss_weight: Weight for the label distance loss (requires labels in dataset and implementation in model)
         """
         self.device = device
         self.device_type = 'cuda' if device.startswith('cuda') else 'cpu'
@@ -84,6 +86,7 @@ class VaeTrainer:
         self.recon_weight = recon_weight
         self.ssim_weight = ssim_weight
         self.img_size = img_size
+        self.label_loss_weight = label_distance_loss_weight
 
         self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate, fused=self.device_type == 'cuda')
 
@@ -145,13 +148,18 @@ class VaeTrainer:
         epoch_loss = 0.0
         epoch_recon_loss = 0.0
         epoch_kl_loss = 0.0
+        epoch_label_loss = 0.0
         total_samples = 0
         beta = self.get_current_beta()
 
-        loop = tqdm(self.train_loader, desc=f"Epoch {self.current_epoch}/{self.num_epochs} [Train]", unit="batch")
+        loop = tqdm(self.train_loader, 
+                    desc=f"Epoch {self.current_epoch}/{self.num_epochs} [Train]", 
+                    unit="batch",
+                    dynamic_ncols=True)
 
-        for batch_idx, (images, _) in enumerate(loop):
+        for batch_idx, (images, labels) in enumerate(loop):
             images = images.to(self.device, non_blocking=True)
+            labels = labels.to(self.device, non_blocking=True)
             if self.use_channels_last:
                 images = images.to(memory_format=torch.channels_last)
             
@@ -165,15 +173,18 @@ class VaeTrainer:
                     x = images,
                     x_recon = recon_images,
                     mu = mu,
+                    labels=labels,
                     log_var = logvar,
                     beta=beta,
                     recon_weight=self.recon_weight,
-                    ssim_weight=self.ssim_weight
+                    ssim_weight=self.ssim_weight,
+                    lweight=self.label_loss_weight
                 )
 
                 loss = losses['total_loss']
                 recon_loss = losses['recon_loss']
                 kl_loss = losses['kl_loss']
+                label_loss = losses['label_loss']
 
             # Backpropagation and optimization step
             self.optimizer.zero_grad(set_to_none=True)
@@ -193,16 +204,18 @@ class VaeTrainer:
             epoch_loss += loss.item() * batch_size  # Multiply by batch_size to get total loss for the epoch
             epoch_recon_loss += recon_loss.item() * batch_size  # Multiply by batch_size to get total recon loss for the epoch
             epoch_kl_loss += kl_loss.item() * batch_size  # Multiply by batch_size to get total KL loss for the epoch
+            epoch_label_loss += label_loss.item() * batch_size  # Multiply by batch_size to get total label loss for the epoch
             total_samples += batch_size
 
             # Update progress bar with current losses and beta value
-            loop.set_postfix(loss=loss.item(), recon_loss=recon_loss.item(), kl_loss=kl_loss.item(), beta=beta)
+            loop.set_postfix(loss=loss.item(), recon_loss=recon_loss.item(), kl_loss=kl_loss.item(), label_loss=label_loss.item(), beta=beta)
 
             # Log training metrics to TensorBoard every 100 steps
             if self.global_step % 100 == 0:
                 self.writer.add_scalar('train/total_loss', losses['total_loss'].item(), self.global_step)
                 self.writer.add_scalar('train/recon_loss', losses['recon_loss'].item(), self.global_step)
                 self.writer.add_scalar('train/kl_loss', losses['kl_loss'].item(), self.global_step)
+                self.writer.add_scalar('train/label_loss', losses['label_loss'].item(), self.global_step)
                 self.writer.add_scalar('train/beta', beta, self.global_step)
 
             self.global_step += 1
@@ -211,11 +224,13 @@ class VaeTrainer:
         avg_epoch_loss = epoch_loss / total_samples
         avg_epoch_recon_loss = epoch_recon_loss / total_samples
         avg_epoch_kl_loss = epoch_kl_loss / total_samples
+        avg_epoch_label_loss = epoch_label_loss / total_samples
 
         return {
             'total_loss': avg_epoch_loss,
             'recon_loss': avg_epoch_recon_loss,
             'kl_loss': avg_epoch_kl_loss,
+            'label_loss': avg_epoch_label_loss,
             'beta': beta
         }
     
@@ -232,14 +247,19 @@ class VaeTrainer:
         val_loss = 0.0
         val_recon_loss = 0.0
         val_kl_loss = 0.0
+        val_label_loss = 0.0
         total_samples = 0
         current_beta = self.get_current_beta()
 
-        loop = tqdm(self.val_loader, desc=f"Epoch {self.current_epoch}/{self.num_epochs} [Val]", unit="batch")
+        loop = tqdm(self.val_loader, 
+                    desc=f"Epoch {self.current_epoch}/{self.num_epochs} [Val]", 
+                    unit="batch",
+                    dynamic_ncols=True)
 
         
-        for batch_idx, (images, _) in enumerate(loop):
+        for batch_idx, (images, labels) in enumerate(loop):
             images = images.to(self.device, non_blocking=True)
+            labels = labels.to(self.device, non_blocking=True)
             if self.use_channels_last:
                 images = images.to(memory_format=torch.channels_last)
             
@@ -254,32 +274,38 @@ class VaeTrainer:
                     x_recon = recon_images,
                     mu = mu,
                     log_var = logvar,
+                    labels=labels,
                     beta=current_beta,
                     recon_weight=self.recon_weight,
-                    ssim_weight=self.ssim_weight
+                    ssim_weight=self.ssim_weight,
+                    lweight=self.label_loss_weight
                 )
 
                 loss = losses['total_loss']
                 recon_loss = losses['recon_loss']
                 kl_loss = losses['kl_loss']
+                label_loss = losses['label_loss']
 
             val_loss += loss.item() * batch_size  # Multiply by batch_size to get total loss for the epoch
             val_recon_loss += recon_loss.item() * batch_size  # Multiply by batch_size to get total recon loss for the epoch
             val_kl_loss += kl_loss.item() * batch_size  # Multiply by batch_size to get total KL loss for the epoch
+            val_label_loss += label_loss.item() * batch_size  # Multiply by batch_size to get total label loss for the epoch
             total_samples += batch_size
 
             # Update progress bar with current losses
-            loop.set_postfix(loss=loss.item(), recon_loss=recon_loss.item(), kl_loss=kl_loss.item())
+            loop.set_postfix(loss=loss.item(), recon_loss=recon_loss.item(), kl_loss=kl_loss.item(), label_loss=label_loss.item())
 
         # Calculate average losses for the epoch
         avg_val_loss = val_loss / total_samples
         avg_val_recon_loss = val_recon_loss / total_samples
         avg_val_kl_loss = val_kl_loss / total_samples
+        avg_val_label_loss = val_label_loss / total_samples
 
         return {
             'total_loss': avg_val_loss,
             'recon_loss': avg_val_recon_loss,
             'kl_loss': avg_val_kl_loss,
+            'label_loss': avg_val_label_loss,
             'beta': current_beta
         }
     
@@ -296,6 +322,7 @@ class VaeTrainer:
         # Get a batch of validation images
         batch = next(iter(self.val_loader))
         images = batch[0][:num_images].to(self.device)
+        labels = batch[1][:num_images].to(self.device)
 
         # Reconstruct images
         recon_images, _, _ = self.model(images)
@@ -337,7 +364,7 @@ class VaeTrainer:
         Args:
             val_loss: Current validation loss to compare against best validation loss
         """
-        checkpoint_path = self.save_dir / f'best_model_epoch_{self.current_epoch}.pth'
+        checkpoint_path = self.save_dir / f'model_epoch_{self.current_epoch}.pth'
         torch.save({
             'epoch': self.current_epoch,
             'model_state_dict': self.model.state_dict(),
@@ -385,15 +412,15 @@ class VaeTrainer:
             val_losses = self.validate()
 
             print(f"Epoch {epoch}/{self.num_epochs} - Train Loss: {train_losses['total_loss']:.4f}, Val Loss: {val_losses['total_loss']:.4f}, Beta: {train_losses['beta']:.4f}")
-            print(f"Train Recon Loss: {train_losses['recon_loss']:.4f}, Train KL Loss: {train_losses['kl_loss']:.4f}")
+            print(f"Train Recon Loss: {train_losses['recon_loss']:.4f}, Train KL Loss: {train_losses['kl_loss']:.4f}, Train Label Loss: {train_losses['label_loss']:.4f}")
 
             # Log validation metrics to TensorBoard
             self.writer.add_scalar('val/total_loss', val_losses['total_loss'], epoch)
             self.writer.add_scalar('val/recon_loss', val_losses['recon_loss'], epoch)
             self.writer.add_scalar('val/kl_loss', val_losses['kl_loss'], epoch)
-
+            self.writer.add_scalar('val/label_loss', val_losses['label_loss'], epoch)
             # Save checkpoint if validation loss improved
-            if val_losses['total_loss'] < self.best_val_loss:
+            if val_losses['total_loss'] < self.best_val_loss or self.current_epoch % visualize_every == 0 or self.current_epoch == self.num_epochs - 1:
                 self.best_val_loss = val_losses['total_loss']
                 self.save_checkpoint()
 
@@ -422,5 +449,5 @@ if __name__ == "__main__":
     model.print_architecture()
 
     # Create trainer and start training
-    trainer = VaeTrainer(model=model, train_loader=train_loader, val_loader=val_loader, learning_rate=1e-4, device='cuda', beta_start=1)
+    trainer = VaeTrainer(model=model, train_loader=train_loader, val_loader=val_loader, learning_rate=1e-4, device='cuda', beta_start=1, label_distance_loss_weight=0.1)
     trainer.train(num_epochs=20, visualize_every=5)
