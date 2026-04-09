@@ -458,6 +458,34 @@ class LatentSpaceVisualizer:
         plt.savefig(self.save_dir / filename, bbox_inches='tight')
         plt.close()
 
+    def visualize_confusion_matrix(self, true_positives: int, false_positives: int, true_negatives: int, false_negatives: int, filename: str = "confusion_matrix.png") -> None:
+        """
+        Visualize a confusion matrix for concept prediction results.
+
+        Args:
+            true_positives: Number of true positive predictions
+            false_positives: Number of false positive predictions
+            true_negatives: Number of true negative predictions
+            false_negatives: Number of false negative predictions
+            filename: Name of the file to save the visualization
+        """
+
+        print(f"Visualizing confusion matrix...")
+
+        confusion_matrix = np.array([[true_positives, false_negatives],
+                                     [false_positives, true_negatives]])
+
+        plt.figure(figsize=(6, 5))
+        sns.heatmap(confusion_matrix, annot=True, fmt='d', cmap='Blues', cbar=False,
+                    xticklabels=['Predicted Positive', 'Predicted Negative'],
+                    yticklabels=['Actual Positive', 'Actual Negative'])
+        plt.title("Confusion Matrix")
+        plt.ylabel("Actual")
+        plt.xlabel("Predicted")
+        plt.tight_layout()
+        plt.savefig(self.save_dir / filename, bbox_inches='tight')
+        plt.close()
+
 
 class ConceptSampler:
     def __init__(self, sampler: LatentSpaceSampler, save_dir: str = './visualizations'):
@@ -528,4 +556,23 @@ class ConceptSampler:
             
             predictions.append(best_concept)
         
-        return predictions   
+        return predictions 
+    
+    def evaluate_concept_predictions(self, true_labels: list, predicted_labels: list, label: str) -> Tuple[int, int, int, int]:
+        """
+        Evaluate the concept prediction results by computing true positives, false positives, true negatives, and false negatives.
+
+        Args:
+            true_labels: List of true concept labels for each sample
+            predicted_labels: List of predicted concept labels for each sample
+            label: The specific concept label to evaluate
+        Returns:
+            Tuple containing counts of (true_positives, false_positives, true_negatives, false_negatives)
+        """
+
+        true_positives = sum(1 for t, p in zip(true_labels, predicted_labels) if t == p and p == label)
+        false_positives = sum(1 for t, p in zip(true_labels, predicted_labels) if t != p and p == label)
+        true_negatives = sum(1 for t, p in zip(true_labels, predicted_labels) if p != label and t != label)
+        false_negatives = sum(1 for t, p in zip(true_labels, predicted_labels) if p != label and t == label)
+
+        return true_positives, false_positives, true_negatives, false_negatives

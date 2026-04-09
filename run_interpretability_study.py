@@ -219,6 +219,12 @@ def analyze_latent_space(model: VAE, val_loader: DataLoader, train_loader: DataL
 
         Path(concept_dir).mkdir(parents=True, exist_ok=True)
 
+        predictions = concept_sampler.predict_concept_labels(
+            latent_vectors=test_mus,
+            concept_directions=concept_directions,
+            threshold=0.5
+        )
+
         for concept in concepts:
 
             if concept not in concept_directions:
@@ -245,12 +251,20 @@ def analyze_latent_space(model: VAE, val_loader: DataLoader, train_loader: DataL
                 in_row=1
             )
 
-        
-        predictions = concept_sampler.predict_concept_labels(
-            latent_vectors=test_mus,
-            concept_directions=concept_directions,
-            threshold=0.5
-        )
+            true_positives, false_positives, true_negatives, false_negatives = concept_sampler.evaluate_concept_predictions(
+                true_labels=labels,
+                predicted_labels=predictions,
+                label=concept
+            )
+
+            visualizer.visualize_confusion_matrix(
+                true_positives=true_positives,
+                false_positives=false_positives,
+                true_negatives=true_negatives,
+                false_negatives=false_negatives,
+                filename=f"concepts/confusion_matrix_{concept}.png"
+            )
+
 
         print(f"Predicted {len(predictions)} concepts.")
 
