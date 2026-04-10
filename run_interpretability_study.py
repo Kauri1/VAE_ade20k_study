@@ -2,6 +2,7 @@ import torch
 import argparse
 import json
 import numpy as np
+from itertools import combinations
 from pathlib import Path
 from torch.utils.data import DataLoader
 
@@ -153,6 +154,7 @@ def analyze_latent_space(model: VAE, val_loader: DataLoader, train_loader: DataL
     else:
         test_labels = labels
 
+    
     visualizer.visualize_reconstructions(
         images=test_images,
         num_samples=16,
@@ -284,7 +286,7 @@ def analyze_latent_space(model: VAE, val_loader: DataLoader, train_loader: DataL
         #     in_row=6,
         #     image_labels=predictions[:num_vis]
         # )
-
+        
 
 
         image_labels = [f"{pred}\n{label}" for pred, label in zip(predictions[:num_vis], labels[:num_vis])]
@@ -295,7 +297,19 @@ def analyze_latent_space(model: VAE, val_loader: DataLoader, train_loader: DataL
             in_row=6,
             image_labels=image_labels
         )
+    
 
+
+    concepts = config['concepts'] if config['concepts'] is not None else sorted(set(labels))
+    print(f"Unique concepts in dataset: {concepts}")
+
+    concept_distances = sampler.concept_distances(
+        mus=test_mus,
+        all_labels=labels,
+        concepts=concepts
+    )
+
+    visualizer.visualize_concept_distance(concept_distances=concept_distances, filename="concept_distances.png")
 
 
 def main():

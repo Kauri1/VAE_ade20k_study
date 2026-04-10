@@ -196,6 +196,50 @@ class LatentSpaceSampler:
         top_k_indices = torch.topk(similarities, k=top_k).indices
 
         return candidate_zs[top_k_indices]
+    
+    def distance_between_latent_vectors(self, z1: torch.Tensor, z2: torch.Tensor) -> float:
+        """
+        Compute the distance between two latent vectors.
+
+        Args:
+            z1: Tensor of shape (latent_dim,) representing the first latent vector
+            z2: Tensor of shape (latent_dim,) representing the second latent vector
+        Returns:
+            Distance between the two latent vectors (using Euclidean distance)
+        """
+        #return np.linalg.norm(z1.cpu().numpy() - z2.cpu().numpy())
+        return torch.norm(z1 - z2).item()
+    
+    def concept_distances(self, mus: torch.Tensor, all_labels: list, concepts: list) -> dict:
+        """
+        Compute distances from a target latent vector to multiple concept vectors.
+
+        Args:
+            mus: Tensor of shape (num_concepts, latent_dim) containing the latent vectors for each concept
+            all_labels: List of labels for each latent vector in mus (should correspond to the order of mus)
+            concepts: List of selected concept names
+
+        Returns:
+            concept_distances[(concept1, concept2)] = avg_distance_value
+        """
+        concept_distances = {}
+        concept_lens = {}
+
+        for i in range(len(all_labels)):
+            for j in range(i + 1, len(all_labels)):
+                concept_a = all_labels[i]
+                concept_b = all_labels[j]
+                if concept_a not in concepts or concept_b not in concepts:
+                    continue
+                distance = self.distance_between_latent_vectors(mus[i], mus[j])
+                concept_distances[(concept_a, concept_b)] = concept_distances.get((concept_a, concept_b), 0) + distance
+                concept_lens[(concept_a, concept_b)] = concept_lens.get((concept_a, concept_b), 0) + 1
+
+        # Compute average distances
+        for (concept_a, concept_b), total_distance in concept_distances.items():
+            concept_distances[(concept_a, concept_b)] = total_distance / concept_lens[(concept_a, concept_b)]
+
+        return concept_distances
 
 class LatentSpaceVisualizer:
 
@@ -482,6 +526,42 @@ class LatentSpaceVisualizer:
         plt.title("Confusion Matrix")
         plt.ylabel("Actual")
         plt.xlabel("Predicted")
+        plt.tight_layout()
+        plt.savefig(self.save_dir / filename, bbox_inches='tight')
+        plt.close()
+    
+    def visualize_concept_distance(self, concept_distances: dict, filename: str = "concept_distances.png") -> None:
+        """
+        Visualize the distances between latent vectors and concept directions.
+
+        Args:
+            concept_distances: concept_distances[concept_name] = distance_value
+            filename: Name of the file to save the visualization
+        """
+
+        print(f"Visualizing concept distances...")
+
+        def _format_concept_label(concept_key):
+            if isinstance(concept_key, (tuple, list)):
+                return " vs ".join(str(item) for item in concept_key)
+            return str(concept_key)
+
+        def _to_scalar_distance(distance_value):
+            if isinstance(distance_value, torch.Tensor):
+                return float(distance_value.detach().cpu().item())
+            if isinstance(distance_value, np.ndarray):
+                return float(np.asarray(distance_value).squeeze().item())
+            return float(distance_value)
+
+        concepts = [_format_concept_label(key) for key in concept_distances.keys()]
+        distances = [_to_scalar_distance(value) for value in concept_distances.values()]
+
+        plt.figure(figsize=(10, 6))
+        sns.barplot(x=concepts, y=distances, palette='viridis')
+        plt.xticks(rotation=45, ha='right')
+        plt.title("Distances to Concept Directions")
+        plt.ylabel("Distance")
+        plt.xlabel("Concept")
         plt.tight_layout()
         plt.savefig(self.save_dir / filename, bbox_inches='tight')
         plt.close()
