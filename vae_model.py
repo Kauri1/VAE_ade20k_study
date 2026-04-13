@@ -77,9 +77,12 @@ class Encoder(nn.Module):
             log_var: Log variance of the latent distribution [batch_size, latent_dim]
         """
         h: torch.Tensor = self.neural_net(x)  # Pass through convolutional layers
+        #print(f"Shape after conv layers: {h.shape}")
         h = self.pool(h)  # Adaptive average pooling to get fixed spatial size
+        #print(f"Shape after pooling: {h.shape}")
 
         h = torch.flatten(h, start_dim=1)  # Flatten the feature map
+        #print(f"Shape after flattening: {h.shape}")
 
         mu = self.fc_mu(h)  # Get mean of latent distribution
         log_var = self.fc_log_var(h)  # Get log variance of latent distribution
@@ -413,12 +416,13 @@ def vae_loss(x: torch.Tensor, x_recon: torch.Tensor,
     recon_loss = pixel_reconstruction_loss(x, x_recon)
     
     kl_loss = kl_divergence_loss(mu, log_var)
-    #ssim_loss = 0.0
+    
+    ssim_loss = ssim(x_recon, x, data_range=1.0, size_average=True) if ssim_weight > 0 else torch.tensor(0.0, device=x.device)
     #sinkhorn_loss = 0.0
 
     label_loss = batch_triplet_loss(mu, labels) if labels is not None else torch.tensor(0.0, device=x.device)
 
-    total_loss = (recon_weight * recon_loss) + (beta * kl_loss) + (lweight * label_loss)
+    total_loss = (recon_weight * recon_loss) + (beta * kl_loss) + (lweight * label_loss) - (ssim_weight * ssim_loss)
 
     loss_dict = {
         "total_loss": total_loss,

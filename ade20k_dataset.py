@@ -14,19 +14,24 @@ class ADE20KDataset(Dataset):
                  root_dir: str,
                  split: str = 'training',
                  img_size: int = 256,
-                 transform: Optional[Callable] = None):
+                 transform: Optional[Callable] = None,
+                 n_common_labels: int = 10,
+                 latent_dir: Optional[str] = None):
         """
         Args:
             root_dir (str): Root directory of the ADE20K dataset.
             split (str): Dataset split to use ('training', 'validation').
             img_size (int): Desired image size (images will be resized to img_size x img_size).
             transform (callable, optional): Optional transformation to apply to the images.
+            n_common_labels (int): Number of most common labels to consider for filtering. If > 0, only images with these labels will be included in the dataset.
+            latent_dir (str, optional): Directory for latent representations.
         """
         self.root_dir = Path(root_dir)
         self.split = split
         self.img_size = img_size
-
-    
+        self.n_common_labels = n_common_labels
+        self.latent_dir = self.latent_dir = Path(latent_dir) if latent_dir else None
+        self.return_paths = False # Set to True if you want __getitem__ to return image paths along with data and labels
 
         if transform is None:
             self.transform = transforms.Compose([
@@ -60,17 +65,59 @@ class ADE20KDataset(Dataset):
         else:
             pr = ''  # No prefix for other splits (if any)
 
-        self.labels = self._get_labels(pr) if self.labels_file.exists() else {}
+        #self.labels = self._get_labels(pr) if self.labels_file.exists() else {}
+        #self.unique_split_labels = sorted(list(set(self.labels.values()))) if self.labels else []
+        #self.unique_split_labels.append("Unknown")  # Fallback for images without labels in this split
 
-        all_labels_dict = self._get_labels() if self.labels_file.exists() else {}
+        # labels_dict[picture_id] = category_name 
+        #self.split_labels_dict = self._get_labels(pr) if self.labels_file.exists() else {}
+        self.all_labels_dict = self._get_labels() if self.labels_file.exists() else {}
+        #print(all_labels_dict)
 
-        self.unique_classes = sorted(list(set(all_labels_dict.values())))
-        self.unique_classes.append("Unknown") # Fallback
+
+
+        #Top n labels
+        n = self.n_common_labels
+        label_counts = {}
+        for label in self.all_labels_dict.values():
+            label_counts[label] = label_counts.get(label, 0) + 1
+
+        top_labels_tuples = sorted(label_counts.items(), key=lambda x: x[1], reverse=True)[:n]
+        top_n_labels_set = {label for label, count in top_labels_tuples}
+
+        print(f"Top {n} most common labels:")
+        for label, count in top_labels_tuples:
+            print(f"{label}: {count} images", end=", ")
+
+        filtered_image_files = []
+        for img_path in self.image_files:
+            picture_id = img_path.stem  # Get filename without extension
+            label = self.all_labels_dict.get(picture_id, "Unknown")
+            if label in top_n_labels_set:
+                filtered_image_files.append(img_path)
+            
+        self.image_files = filtered_image_files
+        print(f"After filtering, {len(self.image_files)} images remain with the top {n} labels.")
+
+        
+        #self.unique_classes = sorted(list(set(self.all_labels_dict.values())))
+        self.unique_classes = sorted(list(top_n_labels_set))
+        #self.unique_classes.append("Unknown") # Fallback
+
+        #print(f"Unique classes found: {self.unique_classes}")
+
+        # class_to_idx[name] = index in unique_classes list
         self.class_to_idx = {cls_name: idx for idx, cls_name in enumerate(self.unique_classes)}
+        #print(f"Class to index mapping: {self.class_to_idx}")
 
-        print(f"Loaded {len(self.labels)} class labels from {self.labels_file}")
-        print(f"Example label: {next(iter(self.labels.items())) if self.labels else 'No labels loaded'}")
+        self.label_indecies = []
+        for img_path in self.image_files:
+            picture_id = img_path.stem
+            cat_name = self.all_labels_dict.get(picture_id)
+            self.label_indecies.append(self.class_to_idx[cat_name])
 
+        print(f"Loaded {len(self.all_labels_dict)} class labels from {self.labels_file}")
+        print(f"Example label: {next(iter(self.all_labels_dict.values())) if self.all_labels_dict else 'No labels loaded'}")
 
 
     
@@ -95,6 +142,11 @@ class ADE20KDataset(Dataset):
     def _get_labels(self, prefix: str = '') -> dict:
         """
         Load class labels from the sceneCategories.txt file.
+        Args:
+            prefix: Only load labels for images whose IDs start with this prefix (e.g., 'ADE_train_' or 'ADE_val_'). If empty, load all labels.
+        Returns:
+            A dictionary mapping image IDs to class labels.
+            labels[picture_id] = category_name
         """
         labels = {}
         with open(self.labels_file, 'r') as f:
@@ -118,11 +170,27 @@ class ADE20KDataset(Dataset):
 
         img_path = self.image_files[idx]
 
+        label = self.get_class_label(idx)
+
+        if self.return_paths:
+            image = Image.open(img_path).convert('RGB')
+            image = self.transform(image)
+            return image, label, img_path.stem
+
+        if self.latent_dir is not None:
+            picture_id = img_path.stem
+            latent_path = self.latent_dir / f"{picture_id}.pt"
+            
+            # Load the pre-computed latent tensor
+            latent = torch.load(latent_path)
+            
+            return latent, label
+
         image = Image.open(img_path).convert('RGB')
 
         image = self.transform(image)
 
-        label = self.get_class_label(idx)
+        
 
         return image, label
     
@@ -130,10 +198,11 @@ class ADE20KDataset(Dataset):
         """
         Get class label for the image at the specified index.
         """
-        img_path = self.image_files[idx]
-        picture_id = img_path.stem  # Get filename without extension
-        cat_name = self.labels.get(picture_id, "Unknown")
-        return torch.tensor(self.class_to_idx[cat_name], dtype=torch.long)
+        #img_path = self.image_files[idx]
+        #picture_id = img_path.stem  # Get filename without extension
+        #cat_name = self.all_labels_dict.get(picture_id, "Unknown")
+        #return torch.tensor(self.class_to_idx[cat_name], dtype=torch.long)
+        return torch.tensor(self.label_indecies[idx], dtype=torch.long)
     
     def get_all_images_of_label(self, label):
         """
@@ -148,7 +217,9 @@ def get_dataloaders(root_dir: str,
                 train_augmentation: bool = False,
                 pin_memory: bool = True,
                 persistent_workers: bool = True,
-                prefetch_factor: int = 4) -> Tuple[DataLoader, DataLoader]:
+                prefetch_factor: int = 4,
+                n_common_labels: int = 10,
+                latent_dir: Optional[str] = None) -> Tuple[DataLoader, DataLoader]:
     """
     Utility function to create DataLoaders for ADE20K dataset.
 
@@ -161,6 +232,8 @@ def get_dataloaders(root_dir: str,
         pin_memory: If True, pin CPU memory for faster GPU transfer
         persistent_workers: Keep workers alive between epochs (requires num_workers > 0)
         prefetch_factor: Number of batches prefetched by each worker
+        n_common_labels: Number of most common labels to consider for filtering (if > 0)
+        latent_dir: Directory for latent representations. If provided, dataset will load pre-computed latent tensors instead of images.
     """
 
     if train_augmentation:
@@ -193,12 +266,16 @@ def get_dataloaders(root_dir: str,
     train_dataset = ADE20KDataset(root_dir=root_dir, 
                                 split='training', 
                                 img_size=img_size, 
-                                transform=train_transform)
+                                transform=train_transform,
+                                n_common_labels=n_common_labels,
+                                latent_dir=Path(latent_dir) / "train" if latent_dir else None)
 
     val_dataset = ADE20KDataset(root_dir=root_dir, 
                                 split='validation', 
                                 img_size=img_size, 
-                                transform=val_transform)
+                                transform=val_transform,
+                                n_common_labels=n_common_labels,
+                                latent_dir=Path(latent_dir) / "validation" if latent_dir else None)
     
     use_persistent_workers = persistent_workers and num_workers > 0
     
@@ -233,12 +310,9 @@ if __name__ == "__main__":
                                             batch_size=batch_size, 
                                             img_size=img_size, 
                                             num_workers=num_workers,
-                                            train_augmentation=True)
+                                            train_augmentation=True,
+                                            n_common_labels=10)
 
     print(f"Number of training batches: {len(train_loader)}")
     print(f"Number of validation batches: {len(val_loader)}")
 
-    # Iterate through one batch to verify everything works
-    for images in train_loader:
-        print(f"Batch shape: {images.shape}")
-        break

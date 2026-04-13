@@ -1,3 +1,5 @@
+from xml.parsers.expat import model
+
 import torch
 import argparse
 import json
@@ -5,6 +7,8 @@ import numpy as np
 from itertools import combinations
 from pathlib import Path
 from torch.utils.data import DataLoader
+
+from tqdm import tqdm
 
 from vae_model import VAE
 from ade20k_dataset import get_dataloaders
@@ -311,6 +315,45 @@ def analyze_latent_space(model: VAE, val_loader: DataLoader, train_loader: DataL
 
     visualizer.visualize_concept_distance(concept_distances=concept_distances, filename="concept_distances.png")
 
+def save_latent_representations(model: VAE, dataloader: DataLoader, save_dir: str):
+    """
+    Extracts and saves the latent representation (mu) for each image in the dataset.
+    Note: The dataloader must have shuffle=False to correctly map variables to filenames.
+    """
+    print(f"\nExtracting and saving latent representations to {save_dir}...")
+
+    save_path = Path(save_dir)
+    save_path.mkdir(parents=True, exist_ok=True)
+
+    device = next(model.parameters()).device
+    model.eval()
+
+    dataloader.dataset.return_paths = True
+
+    dataset = dataloader.dataset
+    if not hasattr(dataset, 'image_files'):
+        raise AttributeError("Dataset must have 'image_files' attribute containing list of image file paths.")
+    
+    with torch.no_grad():
+        global_index = 0
+        for images, labels, picture_ids in tqdm(dataloader, desc="Processing batches", dynamic_ncols=True):
+            images = images.to(device)
+
+            mus, logvars = model.encode(images)
+
+            for i in range(mus.size(0)):
+                image_file = dataset.image_files[global_index]
+                picture_id = picture_ids[i]
+
+                latent_tensor = mus[i].detach().cpu()
+
+                file_desc = save_path / f"{picture_id}.pt"
+                torch.save(latent_tensor, file_desc)
+
+                global_index += 1
+
+    dataloader.dataset.return_paths = False
+    print("Latent representations saved successfully.")
 
 def main():
     parser = argparse.ArgumentParser(description='Run interpretability study on Beta-VAE trained on ADE20K')
@@ -331,7 +374,7 @@ def main():
     parser.add_argument('--beta_start', type=float, default=None, help='Starting value of beta for warmup')
     parser.add_argument('--beta_warmup_epochs', type=int, default=10, help='Number of epochs to warm up beta from beta_start to beta')
     parser.add_argument('--recon_weight', type=float, default=1.0, help='Weight for the reconstruction loss')
-    parser.add_argument('--ssim_weight', type=float, default=0.0, help='Weight for the SSIM loss')
+    parser.add_argument('--ssim_weight', type=float, default=0.5, help='Weight for the SSIM loss')
     parser.add_argument('--label_distance_loss_weight', type=float, default=0.1, help='Weight for the label distance loss (requires labels in dataset and implementation in model)')
 
     # Training hyperparameters
@@ -348,7 +391,7 @@ def main():
     #Analysis hyperparameters
     parser.add_argument('--max_samples', type=int, default=2000, help='Maximum samples for analysis')
     parser.add_argument('--concepts', type=str, nargs='+', default=None, help='Concepts to discover with NP (e.g., "bedroom bathroom")')
-    
+    parser.add_argument('--latent_dir', type=str, default=None, help='Directory for latent representations')
     args = parser.parse_args()
 
     config = {
@@ -378,6 +421,7 @@ def main():
         'visualize_every': args.visualize_every,
         'max_samples': args.max_samples,
         'concepts': args.concepts,
+        'latent_dir': args.latent_dir,
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
     }
 
@@ -389,9 +433,21 @@ def main():
     # Step 1: Train Beta-VAE
     model, train_loader, val_loader, trainer = train_beta_vae(config)
 
-    # Step 2: Latent Space Analysis (to be implemented)
-    # ...
-    analyze_latent_space(model, val_loader, train_loader, config)
+    # Step 2: Latent Space Analysis
+    #analyze_latent_space(model, val_loader, train_loader, config)
+
+    # Step 3: Save latent representations for cnn
+    extract_train_loader = DataLoader(
+        train_loader.dataset,
+        batch_size=config['batch_size'],
+        shuffle=False,
+        num_workers=config['num_workers']
+    )
+
+    experiment_dir = Path(config['save_dir']) / config['experiment_name']
+
+    save_latent_representations(model, extract_train_loader, experiment_dir / "latents" / "train")
+    save_latent_representations(model, val_loader, experiment_dir / "latents" / "validation")
     
 
     

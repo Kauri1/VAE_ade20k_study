@@ -114,6 +114,7 @@ class VaeTrainer:
             'device': self.device,
             'recon_weight': self.recon_weight,
             'ssim_weight': self.ssim_weight,
+            'label_loss_weight': self.label_loss_weight,
             'beta': self.beta,
             'beta_start': self.beta_start,
             'beta_warmup_epochs': self.beta_warmup_epochs,
