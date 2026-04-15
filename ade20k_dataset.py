@@ -218,7 +218,7 @@ def get_dataloaders(root_dir: str,
                 pin_memory: bool = True,
                 persistent_workers: bool = True,
                 prefetch_factor: int = 4,
-                n_common_labels: int = 10,
+                n_common_labels: int = 3,
                 latent_dir: Optional[str] = None) -> Tuple[DataLoader, DataLoader]:
     """
     Utility function to create DataLoaders for ADE20K dataset.
@@ -311,7 +311,7 @@ if __name__ == "__main__":
                                             img_size=img_size, 
                                             num_workers=num_workers,
                                             train_augmentation=True,
-                                            n_common_labels=10)
+                                            n_common_labels=3)
 
     print(f"Number of training batches: {len(train_loader)}")
     print(f"Number of validation batches: {len(val_loader)}")

@@ -39,6 +39,7 @@ def train_beta_vae(config: dict):
         num_workers=config['num_workers'],
         train_augmentation=config['train_augmentation'],
         pin_memory=config['device'] == 'cuda',
+        n_common_labels=config['n_common_labels']
     )
 
     # Get config from config.json
@@ -336,7 +337,13 @@ def save_latent_representations(model: VAE, dataloader: DataLoader, save_dir: st
     
     with torch.no_grad():
         global_index = 0
-        for images, labels, picture_ids in tqdm(dataloader, desc="Processing batches", dynamic_ncols=True):
+        for batch in tqdm(dataloader, desc="Processing batches", dynamic_ncols=True):
+            if len(batch) == 3:
+                images, labels, picture_ids = batch
+            else:
+                images, labels = batch
+                picture_ids = [dataset.image_files[global_index + i].stem for i in range(images.size(0))]
+            
             images = images.to(device)
 
             mus, logvars = model.encode(images)
@@ -392,6 +399,7 @@ def main():
     parser.add_argument('--max_samples', type=int, default=2000, help='Maximum samples for analysis')
     parser.add_argument('--concepts', type=str, nargs='+', default=None, help='Concepts to discover with NP (e.g., "bedroom bathroom")')
     parser.add_argument('--latent_dir', type=str, default=None, help='Directory for latent representations')
+    parser.add_argument('--n_common_labels', type=int, default=10, help='Number of most common labels to use for analysis and concept discovery')
     args = parser.parse_args()
 
     config = {
@@ -422,6 +430,7 @@ def main():
         'max_samples': args.max_samples,
         'concepts': args.concepts,
         'latent_dir': args.latent_dir,
+        'n_common_labels': args.n_common_labels,
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
     }
 
@@ -434,14 +443,14 @@ def main():
     model, train_loader, val_loader, trainer = train_beta_vae(config)
 
     # Step 2: Latent Space Analysis
-    #analyze_latent_space(model, val_loader, train_loader, config)
+    analyze_latent_space(model, val_loader, train_loader, config)
 
     # Step 3: Save latent representations for cnn
     extract_train_loader = DataLoader(
         train_loader.dataset,
         batch_size=config['batch_size'],
         shuffle=False,
-        num_workers=config['num_workers']
+        num_workers=config['num_workers'],
     )
 
     experiment_dir = Path(config['save_dir']) / config['experiment_name']

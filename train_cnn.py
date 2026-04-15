@@ -172,16 +172,18 @@ if __name__ == "__main__":
 
     root_dir = "ade20k_data/ADEData2016"
     batch_size = 16
-    #img_size = 16
-    img_size = 128
+    img_size = 16
+    #img_size = 128
     num_workers = 8
 
     train_loader, val_loader = get_dataloaders(root_dir=root_dir, 
                                             batch_size=batch_size, 
                                             img_size=img_size, 
                                             num_workers=num_workers,
-                                            train_augmentation=True,
-                                            #latent_dir="experiments/good_v2_top10/latents"
+                                            #train_augmentation=True,
+                                            train_augmentation=False,
+                                            latent_dir="experiments/good_v2_top3/latents",
+                                            n_common_labels=3
                                             )
 
     print(f"Number of training batches: {len(train_loader)}")
@@ -190,14 +192,14 @@ if __name__ == "__main__":
     num_classes = len(train_loader.dataset.unique_classes)
     print(f"Number of classes: {num_classes}")
 
-    #model = CNN(in_channels=1, num_classes=num_classes, input_size=img_size, pooling=False)
-    model = CNN(in_channels=3, num_classes=num_classes, input_size=img_size, pooling=True)
+    model = CNN(in_channels=1, num_classes=num_classes, input_size=img_size, pooling=False)
+    #model = CNN(in_channels=3, num_classes=num_classes, input_size=img_size, pooling=True)
     trainer = CNNTrainer(model=model, 
                          train_loader=train_loader, 
                          val_loader=val_loader, 
                          device=device,
                          save_dir="./cnn_models",
-                         model_save_name="cnn_experiment_2")
+                         model_save_name="cnn_experiment_3")
     
 
     
