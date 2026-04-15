@@ -7,8 +7,9 @@ from tqdm import tqdm
 
 from torch.utils.tensorboard import SummaryWriter
 
-from cnn_model import CNN
+from cnn_model import CNN, CNN_1D
 from ade20k_dataset import ADE20KDataset, get_dataloaders
+
 
 class CNNTrainer:
     def __init__(self, 
@@ -48,13 +49,19 @@ class CNNTrainer:
             labels = labels.to(self.device)
 
             # Check if input is a 1D flat vector (e.g. shape is [batch_size, 256])
-            if len(images.shape) == 2:
+            if len(images.shape) == 2 and self.model.__class__.__name__ == "CNN":
                 # Calculate the spatial dimension assuming a square feature map
                 # e.g., 256 vector -> 1 channel, 16x16
                 spatial_size = int(images.shape[1] ** 0.5)
+
                 # Reshape to [batch_size, 1_channel, H, W]
                 images = images.view(-1, 1, spatial_size, spatial_size)
                 #print(images)
+            
+            if len(images.shape) == 2 and self.model.__class__.__name__ == "CNN_1D":
+                # For CNN_1D [batch_size, 1_channel, sequence_length]
+                images = images.unsqueeze(1)
+                #print(images.shape)
 
             batch_size = images.size(0)
 
@@ -99,9 +106,12 @@ class CNNTrainer:
                 labels = labels.to(self.device)
 
                 # Check if input is a 1D flat vector (e.g. shape is [batch_size, 256])
-                if len(images.shape) == 2:
+                if len(images.shape) == 2 and self.model.__class__.__name__ == "CNN":
                     spatial_size = int(images.shape[1] ** 0.5)
                     images = images.view(-1, 1, spatial_size, spatial_size)
+                
+                if len(images.shape) == 2 and self.model.__class__.__name__ == "CNN_1D":
+                    images = images.unsqueeze(1)
 
                 batch_size = images.size(0)
 
@@ -170,43 +180,79 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
+    train_CNN = False
+    train_CNN_1D = True
+
     root_dir = "ade20k_data/ADEData2016"
-    batch_size = 16
-    img_size = 16
-    #img_size = 128
-    num_workers = 8
+    batch_size = 32
+    num_workers = 4
 
-    train_loader, val_loader = get_dataloaders(root_dir=root_dir, 
-                                            batch_size=batch_size, 
-                                            img_size=img_size, 
-                                            num_workers=num_workers,
-                                            #train_augmentation=True,
-                                            train_augmentation=False,
-                                            latent_dir="experiments/good_v2_top3/latents",
-                                            n_common_labels=3
-                                            )
+    if train_CNN == True:
+        img_size = 16
+        #img_size = 128
+        
 
-    print(f"Number of training batches: {len(train_loader)}")
-    print(f"Number of validation batches: {len(val_loader)}")
+        train_loader, val_loader = get_dataloaders(root_dir=root_dir, 
+                                                batch_size=batch_size, 
+                                                img_size=img_size, 
+                                                num_workers=num_workers,
+                                                train_augmentation=True,
+                                                latent_dir="experiments/good_v2_top3/latents",
+                                                n_common_labels=3
+                                                )
 
-    num_classes = len(train_loader.dataset.unique_classes)
-    print(f"Number of classes: {num_classes}")
+        print(f"Number of training batches: {len(train_loader)}")
+        print(f"Number of validation batches: {len(val_loader)}")
 
-    model = CNN(in_channels=1, num_classes=num_classes, input_size=img_size, pooling=False)
-    #model = CNN(in_channels=3, num_classes=num_classes, input_size=img_size, pooling=True)
-    trainer = CNNTrainer(model=model, 
-                         train_loader=train_loader, 
-                         val_loader=val_loader, 
-                         device=device,
-                         save_dir="./cnn_models",
-                         model_save_name="cnn_experiment_3")
+        num_classes = len(train_loader.dataset.unique_classes)
+        print(f"Number of classes: {num_classes}")
+
+        model = CNN(in_channels=1, num_classes=num_classes, input_size=img_size, pooling=False)
+        #model = CNN(in_channels=3, num_classes=num_classes, input_size=img_size, pooling=True)
+        trainer = CNNTrainer(model=model, 
+                            train_loader=train_loader, 
+                            val_loader=val_loader, 
+                            device=device,
+                            save_dir="./cnn_models",
+                            model_save_name="cnn_experiment_3")
     
 
     
-    #trainer.load_model("./cnn_models/cnn_experiment_1/cnn_model.pth")
+        #trainer.load_model("./cnn_models/cnn_experiment_1/cnn_model.pth")
 
-    #writer = SummaryWriter('runs/cnn_model_visualization')
-    #writer.add_graph(model, torch.randn(1, 3, img_size, img_size).to(device))
-    #writer.close()
+        #writer = SummaryWriter('runs/cnn_model_visualization')
+        #writer.add_graph(model, torch.randn(1, 3, img_size, img_size).to(device))
+        #writer.close()
 
-    trainer.train(num_epochs=100)
+        trainer.train(num_epochs=100)
+
+    if train_CNN_1D == True:
+        vec_size = 256
+
+        train_loader, val_loader = get_dataloaders(root_dir=root_dir, 
+                                                batch_size=batch_size,
+                                                img_size=vec_size, 
+                                                num_workers=num_workers,
+                                                train_augmentation=False,
+                                                latent_dir="experiments/VAE_study/latents",
+                                                n_common_labels=3
+                                                )
+        
+        print(f"Number of training batches: {len(train_loader)}")
+        print(f"Number of validation batches: {len(val_loader)}")
+
+        num_classes = len(train_loader.dataset.unique_classes)
+        print(f"Number of classes: {num_classes}")
+
+        batch = next(iter(train_loader))
+        print(f"Batch shape: {batch[0].shape}, Labels shape: {batch[1].shape}")
+
+        model_1D = CNN_1D(num_classes=num_classes, input_size=vec_size)
+        trainer_1D = CNNTrainer(model=model_1D,
+                                train_loader=train_loader,
+                                val_loader=val_loader,
+                                device=device,
+                                save_dir="./cnn_models",
+                                model_save_name="cnn_1d_experiment_1")
+        
+        trainer_1D.train(num_epochs=100)

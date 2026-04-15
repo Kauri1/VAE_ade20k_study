@@ -346,6 +346,7 @@ def save_latent_representations(model: VAE, dataloader: DataLoader, save_dir: st
             
             images = images.to(device)
 
+            # Encode
             mus, logvars = model.encode(images)
 
             for i in range(mus.size(0)):

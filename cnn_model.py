@@ -15,9 +15,6 @@ class CNN(nn.Module):
         self.conv3 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
         self.bn3 = nn.BatchNorm2d(128)
 
-
-
-
         self.pool = nn.MaxPool2d(2, 2)
 
         if self.pooling:
@@ -49,6 +46,33 @@ class CNN(nn.Module):
         #x = F.relu(self.conv2(x))
         #x = F.relu(self.conv3(x))
         
+        x = x.view(-1, self.flatten_dim)  # Flatten the tensor
+        x = self.bn_flat(x)
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        return x
+    
+class CNN_1D(nn.Module):
+    def __init__(self, in_channels=1, input_size=128, num_classes=150):
+        super(CNN_1D, self).__init__()
+
+        self.conv1 = nn.Conv1d(in_channels, 256, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm1d(256)
+        self.conv2 = nn.Conv1d(256, 512, kernel_size=3, padding=1)
+        self.bn2 = nn.BatchNorm1d(512)
+
+        self.pool = nn.MaxPool1d(2)
+
+        self.flatten_dim = 512 * (input_size // 2)  # After one pooling layer
+
+        self.bn_flat = nn.BatchNorm1d(self.flatten_dim)
+
+        self.fc1 = nn.Linear(self.flatten_dim, 512)
+        self.fc2 = nn.Linear(512, num_classes)
+
+    def forward(self, x):
+        x = self.pool(F.relu(self.bn1(self.conv1(x))))
+        x = F.relu(self.bn2(self.conv2(x)))
         
         x = x.view(-1, self.flatten_dim)  # Flatten the tensor
         x = self.bn_flat(x)
