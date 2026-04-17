@@ -39,7 +39,8 @@ def train_beta_vae(config: dict):
         num_workers=config['num_workers'],
         train_augmentation=config['train_augmentation'],
         pin_memory=config['device'] == 'cuda',
-        n_common_labels=config['n_common_labels']
+        n_common_labels=config['n_common_labels'],
+        exclude_concepts=config['exclude_concepts']
     )
 
     # Get config from config.json
@@ -401,6 +402,7 @@ def main():
     parser.add_argument('--concepts', type=str, nargs='+', default=None, help='Concepts to discover with NP (e.g., "bedroom bathroom")')
     parser.add_argument('--latent_dir', type=str, default=None, help='Directory for latent representations')
     parser.add_argument('--n_common_labels', type=int, default=10, help='Number of most common labels to use for analysis and concept discovery')
+    parser.add_argument('--exclude_concepts', type=str, nargs='+', default=None, help='Concepts to exclude from analysis (e.g., "wall floor")')
     args = parser.parse_args()
 
     config = {
@@ -432,6 +434,7 @@ def main():
         'concepts': args.concepts,
         'latent_dir': args.latent_dir,
         'n_common_labels': args.n_common_labels,
+        'exclude_concepts': args.exclude_concepts,
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
     }
 

@@ -24,7 +24,7 @@ class CNNTrainer:
         self.val_loader = val_loader
         self.device = device
         self.criterion = torch.nn.CrossEntropyLoss()
-        self.optimizer = optim.Adam(self.model.parameters(), lr=1e-4)
+        self.optimizer = optim.Adam(self.model.parameters(), lr=1e-4, weight_decay=1e-4)
         self.writer = SummaryWriter(f'{save_dir}/{model_save_name}')
 
         self.current_epoch = 0
@@ -35,7 +35,8 @@ class CNNTrainer:
         self.save_dir.mkdir(parents=True, exist_ok=True)
 
         self.best_val_loss = float('inf')
-
+        self.num_epochs_loss_not_improved = 0
+        self.early_stopping_patience = 10 
     def train_epoch(self):
         self.model.train()
 
@@ -62,6 +63,9 @@ class CNNTrainer:
                 # For CNN_1D [batch_size, 1_channel, sequence_length]
                 images = images.unsqueeze(1)
                 #print(images.shape)
+                # Gaussian noise to prevent memorization
+                noise_std = 0.05 
+                images = images + torch.randn_like(images) * noise_std 
 
             batch_size = images.size(0)
 
@@ -151,10 +155,17 @@ class CNNTrainer:
             self.writer.add_scalar('Loss/Validation', val_metrics['loss'], epoch)
             self.writer.add_scalar('Accuracy/Validation', val_metrics['accuracy'], epoch)
 
-            # Save model checkpoint
+            # Save model checkpoint and Early Stopping tracking
             if val_metrics['loss'] < self.best_val_loss:
                 self.best_val_loss = val_metrics['loss']
                 self.save_model()
+                self.num_epochs_loss_not_improved = 0  # Reset counter if improved
+            else:
+                self.num_epochs_loss_not_improved += 1 # Increment if not improved
+
+            if self.num_epochs_loss_not_improved >= self.early_stopping_patience:
+                print(f"Early stopping triggered after {self.num_epochs_loss_not_improved} epochs without improvement.")
+                break
 
         self.writer.close()
     
@@ -188,8 +199,8 @@ if __name__ == "__main__":
     num_workers = 4
 
     if train_CNN == True:
-        img_size = 16
-        #img_size = 128
+        #img_size = 16
+        img_size = 128
         
 
         train_loader, val_loader = get_dataloaders(root_dir=root_dir, 
@@ -197,8 +208,9 @@ if __name__ == "__main__":
                                                 img_size=img_size, 
                                                 num_workers=num_workers,
                                                 train_augmentation=True,
-                                                latent_dir="experiments/good_v2_top3/latents",
-                                                n_common_labels=3
+                                                #latent_dir="experiments/good_v2_top3/latents",
+                                                n_common_labels=3,
+                                                exclude_concepts=["misc"]
                                                 )
 
         print(f"Number of training batches: {len(train_loader)}")
@@ -207,8 +219,8 @@ if __name__ == "__main__":
         num_classes = len(train_loader.dataset.unique_classes)
         print(f"Number of classes: {num_classes}")
 
-        model = CNN(in_channels=1, num_classes=num_classes, input_size=img_size, pooling=False)
-        #model = CNN(in_channels=3, num_classes=num_classes, input_size=img_size, pooling=True)
+        #model = CNN(in_channels=1, num_classes=num_classes, input_size=img_size, pooling=False)
+        model = CNN(in_channels=3, num_classes=num_classes, input_size=img_size, pooling=True)
         trainer = CNNTrainer(model=model, 
                             train_loader=train_loader, 
                             val_loader=val_loader, 
@@ -234,8 +246,9 @@ if __name__ == "__main__":
                                                 img_size=vec_size, 
                                                 num_workers=num_workers,
                                                 train_augmentation=False,
-                                                latent_dir="experiments/VAE_study/latents",
-                                                n_common_labels=3
+                                                latent_dir="experiments/good_v2_top3_exclude_misc/latents",
+                                                n_common_labels=3,
+                                                exclude_concepts=["misc"]
                                                 )
         
         print(f"Number of training batches: {len(train_loader)}")

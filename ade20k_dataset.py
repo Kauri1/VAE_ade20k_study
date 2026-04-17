@@ -16,6 +16,7 @@ class ADE20KDataset(Dataset):
                  img_size: int = 256,
                  transform: Optional[Callable] = None,
                  n_common_labels: int = 10,
+                 exclude_concepts: Optional[list] = None,
                  latent_dir: Optional[str] = None):
         """
         Args:
@@ -24,12 +25,14 @@ class ADE20KDataset(Dataset):
             img_size (int): Desired image size (images will be resized to img_size x img_size).
             transform (callable, optional): Optional transformation to apply to the images.
             n_common_labels (int): Number of most common labels to consider for filtering. If > 0, only images with these labels will be included in the dataset.
+            exclude_concepts (list, optional): List of concepts to exclude from the dataset. If provided, any image whose label is in this list will be filtered out.
             latent_dir (str, optional): Directory for latent representations.
         """
         self.root_dir = Path(root_dir)
         self.split = split
         self.img_size = img_size
         self.n_common_labels = n_common_labels
+        self.exclude_concepts = exclude_concepts
         self.latent_dir = self.latent_dir = Path(latent_dir) if latent_dir else None
         self.return_paths = False # Set to True if you want __getitem__ to return image paths along with data and labels
 
@@ -74,7 +77,20 @@ class ADE20KDataset(Dataset):
         self.all_labels_dict = self._get_labels() if self.labels_file.exists() else {}
         #print(all_labels_dict)
 
+        # Filter out images with excluded concepts
+        if self.exclude_concepts:
+            filtered_image_files = []
+            for img_path in self.image_files:
+                picture_id = img_path.stem  # Get filename without extension
+                label = self.all_labels_dict.get(picture_id, "Unknown")
+                if label not in self.exclude_concepts:
+                    filtered_image_files.append(img_path)
+            
+            self.image_files = filtered_image_files
+            print(f"After excluding concepts {self.exclude_concepts}, {len(self.image_files)} images remain.")
 
+
+        self.all_labels_dict = {k: v for k, v in self.all_labels_dict.items() if v not in (self.exclude_concepts or [])}
 
         #Top n labels
         n = self.n_common_labels
@@ -219,6 +235,7 @@ def get_dataloaders(root_dir: str,
                 persistent_workers: bool = True,
                 prefetch_factor: int = 4,
                 n_common_labels: int = 3,
+                exclude_concepts: Optional[list] = None,
                 latent_dir: Optional[str] = None) -> Tuple[DataLoader, DataLoader]:
     """
     Utility function to create DataLoaders for ADE20K dataset.
@@ -268,6 +285,7 @@ def get_dataloaders(root_dir: str,
                                 img_size=img_size, 
                                 transform=train_transform,
                                 n_common_labels=n_common_labels,
+                                exclude_concepts=exclude_concepts,
                                 latent_dir=Path(latent_dir) / "train" if latent_dir else None)
 
     val_dataset = ADE20KDataset(root_dir=root_dir, 
@@ -275,6 +293,7 @@ def get_dataloaders(root_dir: str,
                                 img_size=img_size, 
                                 transform=val_transform,
                                 n_common_labels=n_common_labels,
+                                exclude_concepts=exclude_concepts,
                                 latent_dir=Path(latent_dir) / "validation" if latent_dir else None)
     
     use_persistent_workers = persistent_workers and num_workers > 0
