@@ -103,6 +103,8 @@ class VaeTrainer:
         self.current_epoch = 0
         self.global_step = 0
         self.best_val_loss = float('inf')
+        self.num_epochs_loss_not_improved = 0
+        self.early_stopping_patience = 10 
 
         self.save_config(learning_rate)
 
@@ -420,10 +422,22 @@ class VaeTrainer:
             self.writer.add_scalar('val/recon_loss', val_losses['recon_loss'], epoch)
             self.writer.add_scalar('val/kl_loss', val_losses['kl_loss'], epoch)
             self.writer.add_scalar('val/label_loss', val_losses['label_loss'], epoch)
+
             # Save checkpoint if validation loss improved
             if val_losses['total_loss'] < self.best_val_loss or self.current_epoch % visualize_every == 0 or self.current_epoch == self.num_epochs - 1:
                 self.best_val_loss = val_losses['total_loss']
+                print(f"Validation loss improved to {self.best_val_loss:.4f}. Saving checkpoint...")
                 self.save_checkpoint()
+                self.num_epochs_loss_not_improved = 0  # Reset the counter when loss improves
+
+            else:
+                self.num_epochs_loss_not_improved += 1  # Increment the counter when loss doesn't improve
+
+            # Early stopping
+            if self.num_epochs_loss_not_improved >= self.early_stopping_patience:
+                print(f"Early stopping triggered after {self.current_epoch} epochs.")
+                break
+
 
             # Visualize reconstructions every visualize_every epochs
             if (epoch) % visualize_every == 0:

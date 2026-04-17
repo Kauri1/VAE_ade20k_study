@@ -375,8 +375,8 @@ def main():
 
     #Model and training hyperparameters
     parser.add_argument('--latent_dim', type=int, default=128, help='Dimensionality of the latent space')
-    parser.add_argument('--max_channels', type=int, default=512, help='Maximum number of channels in the encoder/decoder')
-    parser.add_argument('--min_channels', type=int, default=64, help='Minimum number of channels in the encoder/decoder')
+    parser.add_argument('--max_channels', type=int, default=256, help='Maximum number of channels in the encoder/decoder')
+    parser.add_argument('--min_channels', type=int, default=8, help='Minimum number of channels in the encoder/decoder')
     parser.add_argument('--bottleneck_spatial', type=int, default=4, help='Spatial dimensions of the bottleneck feature map (e.g. 4 for 256x256 input)')
 
     parser.add_argument('--beta', type=float, default=1.0, help='Beta hyperparameter for Beta-VAE')

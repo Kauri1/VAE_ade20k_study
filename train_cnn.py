@@ -246,7 +246,7 @@ if __name__ == "__main__":
                                                 img_size=vec_size, 
                                                 num_workers=num_workers,
                                                 train_augmentation=False,
-                                                latent_dir="experiments/good_v2_top3_exclude_misc/latents",
+                                                latent_dir="experiments/good_v2_exclude_misc/latents",
                                                 n_common_labels=3,
                                                 exclude_concepts=["misc"]
                                                 )
