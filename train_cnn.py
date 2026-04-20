@@ -191,8 +191,8 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    train_CNN = True
-    train_CNN_1D = False
+    train_CNN = False
+    train_CNN_1D = True
 
     root_dir = "ade20k_data/ADEData2016"
     batch_size = 32
@@ -200,7 +200,7 @@ if __name__ == "__main__":
 
     if train_CNN == True:
         #img_size = 16
-        img_size = 128
+        img_size = 256
         
 
         train_loader, val_loader = get_dataloaders(root_dir=root_dir, 
@@ -209,7 +209,7 @@ if __name__ == "__main__":
                                                 num_workers=num_workers,
                                                 train_augmentation=True,
                                                 #latent_dir="experiments/good_v2_top3/latents",
-                                                n_common_labels=100,
+                                                n_common_labels=50,
                                                 exclude_concepts=["misc"]
                                                 )
 
@@ -247,7 +247,7 @@ if __name__ == "__main__":
                                                 num_workers=num_workers,
                                                 train_augmentation=False,
                                                 latent_dir="experiments/good_v2_exclude_misc/latents",
-                                                n_common_labels=3,
+                                                n_common_labels=50,
                                                 exclude_concepts=["misc"]
                                                 )
         

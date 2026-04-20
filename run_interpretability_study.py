@@ -401,7 +401,7 @@ def main():
     parser.add_argument('--max_samples', type=int, default=2000, help='Maximum samples for analysis')
     parser.add_argument('--concepts', type=str, nargs='+', default=None, help='Concepts to discover with NP (e.g., "bedroom bathroom")')
     parser.add_argument('--latent_dir', type=str, default=None, help='Directory for latent representations')
-    parser.add_argument('--n_common_labels', type=int, default=10, help='Number of most common labels to use for analysis and concept discovery')
+    parser.add_argument('--n_common_labels', type=int, default=None, help='Number of most common labels to use for analysis and concept discovery')
     parser.add_argument('--exclude_concepts', type=str, nargs='+', default=None, help='Concepts to exclude from analysis (e.g., "wall floor")')
     args = parser.parse_args()
 
