@@ -15,7 +15,7 @@ class ADE20KDataset(Dataset):
                  split: str = 'training',
                  img_size: int = 256,
                  transform: Optional[Callable] = None,
-                 n_common_labels: int = 10,
+                 n_common_labels: Optional[InterruptedError] = None,
                  exclude_concepts: Optional[list] = None,
                  latent_dir: Optional[str] = None):
         """
@@ -93,7 +93,7 @@ class ADE20KDataset(Dataset):
         self.all_labels_dict = {k: v for k, v in self.all_labels_dict.items() if v not in (self.exclude_concepts or [])}
 
         #Top n labels
-        n = self.n_common_labels
+        n = self.n_common_labels if self.n_common_labels is not None else len(set(self.all_labels_dict.values()))
         label_counts = {}
         for label in self.all_labels_dict.values():
             label_counts[label] = label_counts.get(label, 0) + 1
@@ -234,7 +234,7 @@ def get_dataloaders(root_dir: str,
                 pin_memory: bool = True,
                 persistent_workers: bool = True,
                 prefetch_factor: int = 4,
-                n_common_labels: int = 3,
+                n_common_labels: Optional[int] = None,
                 exclude_concepts: Optional[list] = None,
                 latent_dir: Optional[str] = None) -> Tuple[DataLoader, DataLoader]:
     """

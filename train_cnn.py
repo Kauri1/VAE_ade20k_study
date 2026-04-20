@@ -191,8 +191,8 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    train_CNN = False
-    train_CNN_1D = True
+    train_CNN = True
+    train_CNN_1D = False
 
     root_dir = "ade20k_data/ADEData2016"
     batch_size = 32
@@ -209,7 +209,7 @@ if __name__ == "__main__":
                                                 num_workers=num_workers,
                                                 train_augmentation=True,
                                                 #latent_dir="experiments/good_v2_top3/latents",
-                                                n_common_labels=3,
+                                                n_common_labels=100,
                                                 exclude_concepts=["misc"]
                                                 )
 
