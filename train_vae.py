@@ -45,7 +45,9 @@ class VaeTrainer:
                  beta: float = 1.0,
                  beta_start: float = 0.0,
                  beta_warmup_epochs: int = 10,
-                 label_distance_loss_weight: float = 0.1):
+                 label_distance_loss_weight: float = 0.1,
+                 n_common_labels: int = None,
+                 exclude_concepts: list = None):
         """
         Args:
             model: VAE model to train
@@ -87,6 +89,8 @@ class VaeTrainer:
         self.ssim_weight = ssim_weight
         self.img_size = img_size
         self.label_loss_weight = label_distance_loss_weight
+        self.n_common_labels = n_common_labels
+        self.exclude_concepts = exclude_concepts
 
         self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate, fused=self.device_type == 'cuda')
 
@@ -125,6 +129,8 @@ class VaeTrainer:
             'min_channels': self.model.min_channels,
             'bottleneck_spatial': self.model.bottleneck_spatial,
             'num_workers': self.train_loader.num_workers,
+            'n_common_labels': self.n_common_labels,
+            'exclude_concepts': self.exclude_concepts
         }
 
         config_path = self.save_dir / 'config.json'

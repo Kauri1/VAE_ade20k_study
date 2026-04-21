@@ -18,11 +18,32 @@ class CNNTrainer:
                  val_loader, 
                  device,
                  save_dir="./cnn_models",
-                 model_save_name="cnn_model.pth"):
+                 model_save_name="cnn_model.pth",
+                 n_common_labels=None,
+                 exclude_concepts=None):
         self.model = model.to(device)
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.device = device
+        
+        self.save_dir = Path(save_dir) / model_save_name
+        self.save_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Extract architecture configurations and save them to a config.json string
+        self.config = {
+            "model_type": self.model.__class__.__name__,
+            "in_channels": getattr(self.model, "in_channels", 3 if self.model.__class__.__name__ == "CNN" else 1),
+            "input_size": getattr(self.model, "input_size", 256),
+            "num_classes": getattr(self.model, "num_classes", 150),
+            "pooling": getattr(self.model, "pooling", True),
+            "n_common_labels": n_common_labels,
+            "exclude_concepts": exclude_concepts
+        }
+        
+        import json
+        with open(self.save_dir / "config.json", "w") as f:
+            json.dump(self.config, f, indent=4)
+
         self.criterion = torch.nn.CrossEntropyLoss()
         self.optimizer = optim.Adam(self.model.parameters(), lr=1e-4, weight_decay=1e-4)
         self.writer = SummaryWriter(f'{save_dir}/{model_save_name}')
@@ -191,26 +212,29 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    train_CNN = False
+    train_CNN = True
     train_CNN_1D = True
 
     root_dir = "ade20k_data/ADEData2016"
     batch_size = 32
     num_workers = 4
 
+    n_common_labels = 10
+    exclude_concepts = ["misc"]
+
     if train_CNN == True:
         #img_size = 16
         img_size = 256
         
 
-        train_loader, val_loader = get_dataloaders(root_dir=root_dir, 
+        train_loader, val_loader, test_loader = get_dataloaders(root_dir=root_dir, 
                                                 batch_size=batch_size, 
                                                 img_size=img_size, 
                                                 num_workers=num_workers,
                                                 train_augmentation=True,
                                                 #latent_dir="experiments/good_v2_top3/latents",
-                                                n_common_labels=50,
-                                                exclude_concepts=["misc"]
+                                                n_common_labels=n_common_labels,
+                                                exclude_concepts=exclude_concepts
                                                 )
 
         print(f"Number of training batches: {len(train_loader)}")
@@ -226,7 +250,9 @@ if __name__ == "__main__":
                             val_loader=val_loader, 
                             device=device,
                             save_dir="./cnn_models",
-                            model_save_name="cnn_experiment_3")
+                            model_save_name="cnn_experiment_3",
+                            n_common_labels=n_common_labels,
+                            exclude_concepts=exclude_concepts)
     
 
     
@@ -241,14 +267,14 @@ if __name__ == "__main__":
     if train_CNN_1D == True:
         vec_size = 256
 
-        train_loader, val_loader = get_dataloaders(root_dir=root_dir, 
+        train_loader, val_loader, test_loader = get_dataloaders(root_dir=root_dir, 
                                                 batch_size=batch_size,
                                                 img_size=vec_size, 
                                                 num_workers=num_workers,
                                                 train_augmentation=False,
                                                 latent_dir="experiments/good_v2_exclude_misc/latents",
-                                                n_common_labels=50,
-                                                exclude_concepts=["misc"]
+                                                n_common_labels=n_common_labels,
+                                                exclude_concepts=exclude_concepts
                                                 )
         
         print(f"Number of training batches: {len(train_loader)}")
@@ -266,6 +292,8 @@ if __name__ == "__main__":
                                 val_loader=val_loader,
                                 device=device,
                                 save_dir="./cnn_models",
-                                model_save_name="cnn_1d_experiment_1")
+                                model_save_name="cnn_1d_experiment_1",
+                                n_common_labels=n_common_labels,
+                                exclude_concepts=exclude_concepts)
         
         trainer_1D.train(num_epochs=100)

@@ -656,3 +656,46 @@ class ConceptSampler:
         false_negatives = sum(1 for t, p in zip(true_labels, predicted_labels) if p != label and t == label)
 
         return true_positives, false_positives, true_negatives, false_negatives
+
+    def tune_threshold_on_val(self, concept_sampler, val_mus, val_labels, concept_directions, concepts, thresholds_to_test):
+        """
+        Finds the threshold that yields the highest average F1-score across all concepts 
+        using the validation set.
+        """
+        print("Tuning threshold on validation set...")
+        best_threshold = 0.5
+        best_avg_f1 = -1
+
+        for t in thresholds_to_test:
+            # Predict on validation data
+            val_predictions = concept_sampler.predict_concept_labels(
+                latent_vectors=val_mus,
+                concept_directions=concept_directions,
+                threshold=t
+            )
+            
+            f1_scores = []
+            for concept in concepts:
+                if concept not in concept_directions:
+                    continue
+                    
+                tp, fp, tn, fn = concept_sampler.evaluate_concept_predictions(
+                    true_labels=val_labels,
+                    predicted_labels=val_predictions,
+                    label=concept
+                )
+                
+                precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+                recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+                f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+                f1_scores.append(f1)
+                
+            avg_f1 = np.mean(f1_scores) if f1_scores else 0
+            print(f"  Threshold {t:.2f} -> Validation Avg F1: {avg_f1:.4f}")
+            
+            if avg_f1 > best_avg_f1:
+                best_avg_f1 = avg_f1
+                best_threshold = t
+                
+        print(f"Selected Optimal Threshold: {best_threshold:.2f} (Val F1: {best_avg_f1:.4f})")
+        return best_threshold

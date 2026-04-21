@@ -4,6 +4,8 @@ import torchvision.transforms as transforms
 from PIL import Image
 from typing import Optional, Callable, Tuple
 from pathlib import Path
+from torch.utils.data import Subset
+import random
 
 class ADE20KDataset(Dataset):
     """
@@ -17,7 +19,9 @@ class ADE20KDataset(Dataset):
                  transform: Optional[Callable] = None,
                  n_common_labels: Optional[InterruptedError] = None,
                  exclude_concepts: Optional[list] = None,
-                 latent_dir: Optional[str] = None):
+                 latent_dir: Optional[str] = None,
+                 sub_split: Optional[str] = None,
+                 split_seed: int = 42):
         """
         Args:
             root_dir (str): Root directory of the ADE20K dataset.
@@ -27,6 +31,8 @@ class ADE20KDataset(Dataset):
             n_common_labels (int): Number of most common labels to consider for filtering. If > 0, only images with these labels will be included in the dataset.
             exclude_concepts (list, optional): List of concepts to exclude from the dataset. If provided, any image whose label is in this list will be filtered out.
             latent_dir (str, optional): Directory for latent representations.
+            sub_split (str, optional): Sub-split to use ('train', 'val').
+            split_seed (int): Random seed for splitting the dataset.
         """
         self.root_dir = Path(root_dir)
         self.split = split
@@ -35,6 +41,8 @@ class ADE20KDataset(Dataset):
         self.exclude_concepts = exclude_concepts
         self.latent_dir = self.latent_dir = Path(latent_dir) if latent_dir else None
         self.return_paths = False # Set to True if you want __getitem__ to return image paths along with data and labels
+        self.sub_split = sub_split
+        self.split_seed = split_seed
 
         if transform is None:
             self.transform = transforms.Compose([
@@ -95,7 +103,8 @@ class ADE20KDataset(Dataset):
         #Top n labels
         n = self.n_common_labels if self.n_common_labels is not None else len(set(self.all_labels_dict.values()))
         label_counts = {}
-        for label in self.all_labels_dict.values():
+        for img_path in self.image_files:
+            label = self.all_labels_dict.get(img_path.stem, "Unknown")
             label_counts[label] = label_counts.get(label, 0) + 1
 
         top_labels_tuples = sorted(label_counts.items(), key=lambda x: x[1], reverse=True)[:n]
@@ -104,6 +113,7 @@ class ADE20KDataset(Dataset):
         print(f"Top {n} most common labels:")
         for label, count in top_labels_tuples:
             print(f"{label}: {count} images", end=", ")
+        print()
 
         filtered_image_files = []
         for img_path in self.image_files:
@@ -114,6 +124,19 @@ class ADE20KDataset(Dataset):
             
         self.image_files = filtered_image_files
         print(f"After filtering, {len(self.image_files)} images remain with the top {n} labels.")
+
+
+        if sub_split in ['train', 'val']:
+            rng = random.Random(self.split_seed)
+            shuffled_files = self.image_files.copy()
+            rng.shuffle(shuffled_files)
+
+            split_idx = int(0.8 * len(shuffled_files))
+            if sub_split == 'train':
+                self.image_files = shuffled_files[:split_idx]
+            else:
+                self.image_files = shuffled_files[split_idx:]
+            print(f"Selected sub-split '{sub_split}': {len(self.image_files)} images remain.")
 
         
         #self.unique_classes = sorted(list(set(self.all_labels_dict.values())))
@@ -129,7 +152,7 @@ class ADE20KDataset(Dataset):
         self.label_indecies = []
         for img_path in self.image_files:
             picture_id = img_path.stem
-            cat_name = self.all_labels_dict.get(picture_id)
+            cat_name = self.all_labels_dict.get(picture_id, "Unknown")
             self.label_indecies.append(self.class_to_idx[cat_name])
 
         print(f"Loaded {len(self.all_labels_dict)} class labels from {self.labels_file}")
@@ -236,7 +259,7 @@ def get_dataloaders(root_dir: str,
                 prefetch_factor: int = 4,
                 n_common_labels: Optional[int] = None,
                 exclude_concepts: Optional[list] = None,
-                latent_dir: Optional[str] = None) -> Tuple[DataLoader, DataLoader]:
+                latent_dir: Optional[str] = None) -> Tuple[DataLoader, DataLoader, DataLoader]:
     """
     Utility function to create DataLoaders for ADE20K dataset.
 
@@ -281,23 +304,52 @@ def get_dataloaders(root_dir: str,
     ])
 
     train_dataset = ADE20KDataset(root_dir=root_dir, 
-                                split='training', 
-                                img_size=img_size, 
-                                transform=train_transform,
-                                n_common_labels=n_common_labels,
-                                exclude_concepts=exclude_concepts,
-                                latent_dir=Path(latent_dir) / "train" if latent_dir else None)
+                                  split='training', 
+                                  img_size=img_size, 
+                                  transform=train_transform,
+                                  n_common_labels=n_common_labels,
+                                  exclude_concepts=exclude_concepts,
+                                  latent_dir=Path(latent_dir) / "train" if latent_dir else None,
+                                  sub_split='train')
+
 
     val_dataset = ADE20KDataset(root_dir=root_dir, 
+                                split='training', 
+                                img_size=img_size, 
+                                transform=val_transform,
+                                n_common_labels=n_common_labels,
+                                exclude_concepts=exclude_concepts,
+                                latent_dir=Path(latent_dir) / "validation" if latent_dir else None,
+                                sub_split='val')
+    
+
+    test_dataset = ADE20KDataset(root_dir=root_dir, 
                                 split='validation', 
                                 img_size=img_size, 
                                 transform=val_transform,
                                 n_common_labels=n_common_labels,
                                 exclude_concepts=exclude_concepts,
-                                latent_dir=Path(latent_dir) / "validation" if latent_dir else None)
+                                latent_dir=Path(latent_dir) / "test" if latent_dir else None)
+    
+
+    # train_dataset = ADE20KDataset(root_dir=root_dir, 
+    #                             split='training', 
+    #                             img_size=img_size, 
+    #                             transform=train_transform,
+    #                             n_common_labels=n_common_labels,
+    #                             exclude_concepts=exclude_concepts,
+    #                             latent_dir=Path(latent_dir) / "train" if latent_dir else None)
+
+    # val_dataset = ADE20KDataset(root_dir=root_dir, 
+    #                             split='validation', 
+    #                             img_size=img_size, 
+    #                             transform=val_transform,
+    #                             n_common_labels=n_common_labels,
+    #                             exclude_concepts=exclude_concepts,
+    #                             latent_dir=Path(latent_dir) / "validation" if latent_dir else None)
     
     use_persistent_workers = persistent_workers and num_workers > 0
-    
+
     train_loader = DataLoader(train_dataset, 
                             batch_size=batch_size, 
                             shuffle=True, 
@@ -317,7 +369,48 @@ def get_dataloaders(root_dir: str,
         prefetch_factor=prefetch_factor if num_workers > 0 else None
     )
 
-    return train_loader, val_loader
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        drop_last=False,
+        persistent_workers=use_persistent_workers,
+        prefetch_factor=prefetch_factor if num_workers > 0 else None
+    )
+    
+    # train_loader = DataLoader(train_dataset, 
+    #                         batch_size=batch_size, 
+    #                         shuffle=True, 
+    #                         num_workers=num_workers, 
+    #                         pin_memory=pin_memory,
+    #                         persistent_workers=use_persistent_workers,
+    #                         prefetch_factor=prefetch_factor if num_workers > 0 else None)
+    
+    # val_loader = DataLoader(
+    #     val_dataset,
+    #     batch_size=batch_size,
+    #     shuffle=False,
+    #     num_workers=num_workers,
+    #     pin_memory=pin_memory,
+    #     drop_last=False,
+    #     persistent_workers=use_persistent_workers,
+    #     prefetch_factor=prefetch_factor if num_workers > 0 else None
+    # )
+
+
+    train_files = set(train_dataset.image_files)
+    val_files = set(val_dataset.image_files)
+    test_files = set(test_dataset.image_files)
+
+    assert train_files.isdisjoint(val_files), "Overlap detected between training and validation sets!"
+    assert train_files.isdisjoint(test_files), "Overlap detected between training and test sets!"
+    assert val_files.isdisjoint(test_files), "Overlap detected between validation and test sets!"
+    
+
+
+    return train_loader, val_loader, test_loader
 
 if __name__ == "__main__":
     root_dir = "ade20k_data/ADEData2016"
@@ -325,13 +418,15 @@ if __name__ == "__main__":
     img_size = 256
     num_workers = 0
 
-    train_loader, val_loader = get_dataloaders(root_dir=root_dir, 
+    train_loader, val_loader, test_loader = get_dataloaders(root_dir=root_dir, 
                                             batch_size=batch_size, 
                                             img_size=img_size, 
                                             num_workers=num_workers,
                                             train_augmentation=True,
-                                            n_common_labels=3)
+                                            n_common_labels=10,
+                                            exclude_concepts=["misc"])
 
     print(f"Number of training batches: {len(train_loader)}")
     print(f"Number of validation batches: {len(val_loader)}")
+    print(f"Number of test batches: {len(test_loader)}")
 

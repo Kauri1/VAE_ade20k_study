@@ -32,7 +32,7 @@ def train_beta_vae(config: dict):
     print(f"β hyperparameter: {config['beta']}")
     print(f"Latent dimension: {config['latent_dim']}")
 
-    train_loader, val_loader = get_dataloaders(
+    train_loader, val_loader, test_loader = get_dataloaders(
         root_dir=config['data_dir'],
         batch_size=config['batch_size'],
         img_size=config['img_size'],
@@ -91,7 +91,10 @@ def train_beta_vae(config: dict):
         beta=config['beta'],
         beta_start=config['beta_start'],
         beta_warmup_epochs=config['beta_warmup_epochs'],
-        label_distance_loss_weight=config['label_distance_loss_weight'])
+        label_distance_loss_weight=config['label_distance_loss_weight'],
+        n_common_labels=config['n_common_labels'],
+        exclude_concepts=config['exclude_concepts']
+    )
 
 
     if config['checkpoint_path']:
@@ -106,10 +109,10 @@ def train_beta_vae(config: dict):
     else:
         print("Skipping training. Proceeding to interpretability analysis.")
 
-    return model, train_loader, val_loader, trainer
+    return model, train_loader, val_loader, test_loader, trainer
 
 
-def analyze_latent_space(model: VAE, val_loader: DataLoader, train_loader: DataLoader, config: dict):
+def analyze_latent_space(model: VAE, val_loader: DataLoader, train_loader: DataLoader, test_loader: DataLoader, config: dict):
     """
     Analyze the latent space of the trained VAE using Nevanlinna-Pick interpolation to discover concepts.
 
@@ -117,6 +120,7 @@ def analyze_latent_space(model: VAE, val_loader: DataLoader, train_loader: DataL
         model: Trained VAE model
         val_loader: DataLoader for the validation set (used for sampling images for analysis)
         train_loader: DataLoader for the training set (used for finding concept vectors)
+        test_loader: DataLoader for the test set (used for evaluating the model)
         config: Dictionary containing analysis configuration parameters
     """
 
@@ -127,21 +131,29 @@ def analyze_latent_space(model: VAE, val_loader: DataLoader, train_loader: DataL
     # Load concept labels for ADE20K dataset (to be implemented)
 
     sampler = LatentSpaceSampler(model=model, device=config['device'])
-    dataset_images, mus, logvars, labels = sampler.collect_latent_samples(val_loader, max_samples=config['max_samples'])
+    val_images, val_mus, val_logvars, val_labels = sampler.collect_latent_samples(val_loader, max_samples=config['max_samples'])
+    val_mus = val_mus.to(config['device'])
+    val_images = val_images.to(config['device'])
+    val_logvars = val_logvars.to(config['device'])
 
     train_images, train_mus, train_logvars, train_labels = sampler.collect_latent_samples(train_loader, max_samples=config['max_samples'])
     train_mus = train_mus.to(config['device'])
     train_images = train_images.to(config['device'])
     train_logvars = train_logvars.to(config['device'])
 
+    test_images, test_mus, test_logvars, test_labels = sampler.collect_latent_samples(test_loader, max_samples=config['max_samples'])
+    test_mus = test_mus.to(config['device'])
+    test_images = test_images.to(config['device'])
+    test_logvars = test_logvars.to(config['device'])
+
     dataset = val_loader.dataset
     if hasattr(dataset, 'unique_classes'):
-        labels = [dataset.unique_classes[lbl.item()] for lbl in labels]
+        val_labels = [dataset.unique_classes[lbl.item()] for lbl in val_labels]
         train_labels = [dataset.unique_classes[lbl.item()] for lbl in train_labels]
-    
-    print(f"Collected {dataset_images.shape} samples for latent space analysis.")
-    print(f"Latent space mean shape: {mus.shape}, logvar shape: {logvars.shape}")
-    print(f"Shape of labels: {len(labels)}")
+        test_labels = [dataset.unique_classes[lbl.item()] for lbl in test_labels]
+    print(f"Collected {val_images.shape} samples for latent space analysis.")
+    print(f"Latent space mean shape: {val_mus.shape}, logvar shape: {val_logvars.shape}")
+    print(f"Shape of labels: {len(val_labels)}")
 
     viz_dir = Path(config['save_dir']) / config['experiment_name'] / 'visualizations'
     visualizer = LatentSpaceVisualizer(sampler=sampler, save_dir=viz_dir)
@@ -152,62 +164,61 @@ def analyze_latent_space(model: VAE, val_loader: DataLoader, train_loader: DataL
     #test_images = next(iter(val_loader)).to(config['device'])
     #print(f"Test images shape: {test_images.shape}")
 
-    test_images = dataset_images.to(config['device'])
-    test_mus = mus.to(config['device'])
-    test_logvars = logvars.to(config['device'])
+    # Filter labels if specific concepts are provided in config
     if config['concepts'] is not None:
-        test_labels = [labels[i] if labels[i] in config['concepts'] else '' for i in range(len(labels))]
+        filtered_val_labels = [val_labels[i] if val_labels[i] in config['concepts'] else '' for i in range(len(val_labels))]
+        filtered_test_labels = [test_labels[i] if test_labels[i] in config['concepts'] else '' for i in range(len(test_labels))]
     else:
-        test_labels = labels
+        filtered_val_labels = val_labels
+        filtered_test_labels = test_labels
 
-    
     visualizer.visualize_reconstructions(
-        images=test_images,
+        images=val_images,
         num_samples=16,
         errors=True,
-        labels=labels,
+        labels=filtered_val_labels,
         filename="reconstructions.png"
     )
 
     visualizer.visualize_latent_interpolation(
-        z1=test_mus[0],
-        z2=test_mus[1],
+        z1=val_mus[0],
+        z2=val_mus[1],
         num_steps=12,
         filename="latent_interpolation.png"
     )
 
 
     visualizer.visualize_latent_traversal(
-        base_z=test_mus[0],
+        base_z=val_mus[0],
         num_steps=11,
-        n_sigma=5,
+        n_sigma=3,
         num_top_dims=7,
-        dataset_mus=test_mus,
+        dataset_mus=val_mus,
         filename="latent_traversal.png"
     )
 
     visualizer.visualize_directional_traversal(
-        base_z=test_mus[0],
-        direction=test_mus[1] - test_mus[0],
+        base_z=val_mus[0],
+        direction=val_mus[1] - val_mus[0],
         num_steps=12,
-        n_sigma=5,
-        dataset_mus=test_mus,
+        n_sigma=3,
+        dataset_mus=val_mus,
         filename="directional_traversal.png"
     )
 
     #print(test_labels)
 
     visualizer.visualize_latent_distribution(
-        dataset_mus=test_mus,
+        dataset_mus=val_mus,
         filename="latent_distribution.png",
-        labels=test_labels,
+        labels=filtered_val_labels,
         num_top_concepts=30
     )
 
     visualizer.visualize_latent_distribution(
         dataset_mus=test_mus,
         filename="latent_distribution_all_labels.png",
-        labels=labels,
+        labels=filtered_test_labels,
         num_top_concepts=30
     )
 
@@ -222,6 +233,7 @@ def analyze_latent_space(model: VAE, val_loader: DataLoader, train_loader: DataL
         concepts = config['concepts']
 
         #should use train set to find vectors and visualize on val set?.
+        
 
         concept_directions = concept_sampler.find_concept_directions(
             concepts=concepts,
@@ -233,12 +245,23 @@ def analyze_latent_space(model: VAE, val_loader: DataLoader, train_loader: DataL
 
         Path(concept_dir).mkdir(parents=True, exist_ok=True)
 
+        candidate_thresholds = np.linspace(0.1, 0.9, 17) 
+        optimal_threshold = concept_sampler.tune_threshold_on_val(
+            concept_sampler, 
+            val_mus, 
+            val_labels, 
+            concept_directions, 
+            concepts, 
+            candidate_thresholds
+        )
+
         predictions = concept_sampler.predict_concept_labels(
             latent_vectors=test_mus,
             concept_directions=concept_directions,
-            threshold=0.5
+            threshold=optimal_threshold
         )
 
+        metrics_report = {}
         for concept in concepts:
 
             if concept not in concept_directions:
@@ -251,7 +274,7 @@ def analyze_latent_space(model: VAE, val_loader: DataLoader, train_loader: DataL
                 base_z=test_mus[0],
                 direction=direction,
                 num_steps=12,
-                n_sigma=5,
+                n_sigma=3,
                 dataset_mus=train_mus,
                 filename=f"concepts/traversal_{concept}.png"
             )
@@ -265,19 +288,42 @@ def analyze_latent_space(model: VAE, val_loader: DataLoader, train_loader: DataL
                 in_row=1
             )
 
-            true_positives, false_positives, true_negatives, false_negatives = concept_sampler.evaluate_concept_predictions(
-                true_labels=labels,
+            tp, fp, tn, fn = concept_sampler.evaluate_concept_predictions(
+                true_labels=test_labels,
                 predicted_labels=predictions,
                 label=concept
             )
 
             visualizer.visualize_confusion_matrix(
-                true_positives=true_positives,
-                false_positives=false_positives,
-                true_negatives=true_negatives,
-                false_negatives=false_negatives,
+                true_positives=tp,
+                false_positives=fp,
+                true_negatives=tn,
+                false_negatives=fn,
                 filename=f"concepts/confusion_matrix_{concept}.png"
             )
+
+            # correct / all
+            accuracy = (tp + tn) / (tp + fp + tn + fn) if (tp + fp + tn + fn) > 0 else 0
+            # correct positives out of predicted positives,
+            precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+            # correct positives out of actual positives
+            recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+            # harmonic mean of precision and recall
+            f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+
+            metrics_report[concept] = {
+                'accuracy': accuracy,
+                'precision': precision,
+                'recall': recall,
+                'f1_score': f1_score,
+                'tp': tp,
+                'fp': fp,
+                'tn': tn,
+                'fn': fn
+            }
+        
+        with open(concept_dir / "concept_metrics_test.json", 'w') as f:
+            json.dump(metrics_report, f, indent=4)
 
 
         print(f"Predicted {len(predictions)} concepts.")
@@ -295,7 +341,7 @@ def analyze_latent_space(model: VAE, val_loader: DataLoader, train_loader: DataL
         
 
 
-        image_labels = [f"{pred}\n{label}" for pred, label in zip(predictions[:num_vis], labels[:num_vis])]
+        image_labels = [f"{pred}\n{label}" for pred, label in zip(predictions[:num_vis], filtered_test_labels[:num_vis])]
 
         visualizer.visualize_images(
             images=test_images[:num_vis],
@@ -306,12 +352,12 @@ def analyze_latent_space(model: VAE, val_loader: DataLoader, train_loader: DataL
     
 
 
-    concepts = config['concepts'] if config['concepts'] is not None else sorted(set(labels))
+    concepts = config['concepts'] if config['concepts'] is not None else sorted(set(val_labels))
     print(f"Unique concepts in dataset: {concepts}")
 
     concept_distances = sampler.concept_distances(
-        mus=test_mus,
-        all_labels=labels,
+        mus=val_mus,
+        all_labels=val_labels,
         concepts=concepts
     )
 
@@ -444,10 +490,10 @@ def main():
         print(f"  {key}: {value}")
 
     # Step 1: Train Beta-VAE
-    model, train_loader, val_loader, trainer = train_beta_vae(config)
+    model, train_loader, val_loader, test_loader, trainer = train_beta_vae(config)
 
     # Step 2: Latent Space Analysis
-    analyze_latent_space(model, val_loader, train_loader, config)
+    analyze_latent_space(model, val_loader, train_loader, test_loader, config)
 
     # Step 3: Save latent representations for cnn
     extract_train_loader = DataLoader(
@@ -461,6 +507,7 @@ def main():
 
     save_latent_representations(model, extract_train_loader, experiment_dir / "latents" / "train")
     save_latent_representations(model, val_loader, experiment_dir / "latents" / "validation")
+    save_latent_representations(model, test_loader, experiment_dir / "latents" / "test")
     
 
     

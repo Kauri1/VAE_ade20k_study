@@ -7,6 +7,8 @@ class CNN(nn.Module):
         super(CNN, self).__init__()
 
         self.pooling = pooling
+        self.num_classes = num_classes
+        self.input_size = input_size
 
         self.conv1 = nn.Conv2d(in_channels, 32, kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm2d(32)
@@ -55,6 +57,10 @@ class CNN(nn.Module):
 class CNN_1D(nn.Module):
     def __init__(self, in_channels=1, input_size=128, num_classes=150):
         super(CNN_1D, self).__init__()
+
+        self.in_channels = in_channels
+        self.input_size = input_size
+        self.num_classes = num_classes
 
         # [batch_size, in_channels, input_size] -> [batch_size, 16, input_size]
         self.conv1 = nn.Conv1d(in_channels, 16, kernel_size=3, padding=1)
