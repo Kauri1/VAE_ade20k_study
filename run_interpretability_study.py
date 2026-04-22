@@ -400,10 +400,11 @@ def save_latent_representations(model: VAE, dataloader: DataLoader, save_dir: st
                 image_file = dataset.image_files[global_index]
                 picture_id = picture_ids[i]
 
-                latent_tensor = mus[i].detach().cpu()
+                mu_tensor = mus[i].detach().cpu()
+                logvar_tensor = logvars[i].detach().cpu()
 
                 file_desc = save_path / f"{picture_id}.pt"
-                torch.save(latent_tensor, file_desc)
+                torch.save({'mu': mu_tensor, 'logvar': logvar_tensor}, file_desc)
 
                 global_index += 1
 

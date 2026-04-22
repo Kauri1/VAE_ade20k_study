@@ -7,11 +7,11 @@ import numpy as np
 from tqdm import tqdm
 from sklearn.metrics import precision_recall_fscore_support, accuracy_score, confusion_matrix
 
-from cnn_model import CNN, CNN_1D
+from cnn_model import CNN, CNN_1D, MLP
 from train_cnn import CNNTrainer
 from ade20k_dataset import get_dataloaders
 
-def evaluate_model_scientifically(trainer: CNNTrainer, test_loader, config: dict):
+def evaluate_model(trainer: CNNTrainer, test_loader, config: dict):
     print("\n" + "=" * 60)
     print(f"Evaluating Model: {config['model_path']} on Test Set")
     print("=" * 60)
@@ -165,7 +165,7 @@ def main():
         latent_dir=config['latent_dir']
     )
 
-    # 2. Initialize Model & pseudo-trainer (since we only evaluate here)
+    # 2. we only evaluate here
     if config['model_type'] == "CNN":
         model = CNN(
             in_channels=config['in_channels'],
@@ -179,12 +179,17 @@ def main():
             input_size=config['input_size'],
             num_classes=config['num_classes']
         ).to(config['device'])
+    elif config['model_type'] == "MLP":
+        model = MLP(
+            input_size=config['input_size'],
+            num_classes=config['num_classes']
+        ).to(config['device'])
     else:
         raise ValueError(f"Unknown model_type: {config['model_type']}")
     
     trainer = CNNTrainer(
         model=model,
-        train_loader=None, # Not needed for pure evaluation
+        train_loader=None,
         val_loader=None, 
         device=config['device'],
         save_dir=Path("."),
@@ -199,7 +204,7 @@ def main():
         return
 
     # 4. Strict evaluation on the test set alone
-    evaluate_model_scientifically(trainer, test_loader, config)
+    evaluate_model(trainer, test_loader, config)
 
 if __name__ == "__main__":
     main()

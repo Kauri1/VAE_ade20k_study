@@ -221,7 +221,21 @@ class ADE20KDataset(Dataset):
             latent_path = self.latent_dir / f"{picture_id}.pt"
             
             # Load the pre-computed latent tensor
-            latent = torch.load(latent_path)
+            latent_data = torch.load(latent_path, weights_only=True)
+            if isinstance(latent_data, dict) and 'mu' in latent_data and 'logvar' in latent_data:
+                mu = latent_data['mu']
+                
+                # Only sample from the distribution during training
+                if self.split == 'training' and self.sub_split == 'train':
+                    logvar = latent_data['logvar']
+                    std = torch.exp(0.5 * logvar)
+                    eps = torch.randn_like(std)
+                    latent = mu + std * eps
+                else:
+                    # Use deterministic mean for validation and testing
+                    latent = mu
+            else:
+                latent = latent_data
             
             return latent, label
 

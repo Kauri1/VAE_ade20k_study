@@ -7,9 +7,9 @@ from tqdm import tqdm
 
 from torch.utils.tensorboard import SummaryWriter
 
-from cnn_model import CNN, CNN_1D
+from cnn_model import CNN, CNN_1D, MLP
 from ade20k_dataset import ADE20KDataset, get_dataloaders
-
+import json
 
 class CNNTrainer:
     def __init__(self, 
@@ -20,7 +20,8 @@ class CNNTrainer:
                  save_dir="./cnn_models",
                  model_save_name="cnn_model.pth",
                  n_common_labels=None,
-                 exclude_concepts=None):
+                 exclude_concepts=None,
+                 latent_dir=None):
         self.model = model.to(device)
         self.train_loader = train_loader
         self.val_loader = val_loader
@@ -37,10 +38,11 @@ class CNNTrainer:
             "num_classes": getattr(self.model, "num_classes", 150),
             "pooling": getattr(self.model, "pooling", True),
             "n_common_labels": n_common_labels,
-            "exclude_concepts": exclude_concepts
+            "exclude_concepts": exclude_concepts,
+            "latent_dir": latent_dir
         }
         
-        import json
+        
         with open(self.save_dir / "config.json", "w") as f:
             json.dump(self.config, f, indent=4)
 
@@ -84,9 +86,6 @@ class CNNTrainer:
                 # For CNN_1D [batch_size, 1_channel, sequence_length]
                 images = images.unsqueeze(1)
                 #print(images.shape)
-                # Gaussian noise to prevent memorization
-                noise_std = 0.05 
-                images = images + torch.randn_like(images) * noise_std 
 
             batch_size = images.size(0)
 
@@ -212,8 +211,9 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    train_CNN = True
-    train_CNN_1D = True
+    train_CNN = False
+    train_CNN_1D = False
+    train_MLP = True
 
     root_dir = "ade20k_data/ADEData2016"
     batch_size = 32
@@ -294,6 +294,36 @@ if __name__ == "__main__":
                                 save_dir="./cnn_models",
                                 model_save_name="cnn_1d_experiment_1",
                                 n_common_labels=n_common_labels,
-                                exclude_concepts=exclude_concepts)
+                                exclude_concepts=exclude_concepts,
+                                latent_dir="experiments/good_v2_exclude_misc/latents")
         
         trainer_1D.train(num_epochs=100)
+
+    if train_MLP == True:
+        vec_size = 256
+
+        train_loader, val_loader, test_loader = get_dataloaders(root_dir=root_dir, 
+                                                batch_size=batch_size,
+                                                img_size=vec_size, 
+                                                num_workers=num_workers,
+                                                train_augmentation=False,
+                                                latent_dir="experiments/good_v2_exclude_misc/latents",
+                                                n_common_labels=n_common_labels,
+                                                exclude_concepts=exclude_concepts
+                                                )
+        
+        num_classes = len(train_loader.dataset.unique_classes)
+        print(f"MLP Training - Number of classes: {num_classes}")
+
+        model_MLP = MLP(num_classes=num_classes, input_size=vec_size)
+        trainer_MLP = CNNTrainer(model=model_MLP,
+                                train_loader=train_loader,
+                                val_loader=val_loader,
+                                device=device,
+                                save_dir="./cnn_models",
+                                model_save_name="mlp_experiment_1",
+                                n_common_labels=n_common_labels,
+                                exclude_concepts=exclude_concepts,
+                                latent_dir="experiments/good_v2_exclude_misc/latents")
+        
+        trainer_MLP.train(num_epochs=100)
