@@ -114,6 +114,7 @@ class VaeTrainer:
 
     def save_config(self, learning_rate):
         config = {
+            'model_type': self.model.__class__.__name__,
             'latent_dim': self.model.latent_dim,
             'learning_rate': learning_rate,
             'batch_size': self.train_loader.batch_size,
@@ -125,9 +126,9 @@ class VaeTrainer:
             'beta_start': self.beta_start,
             'beta_warmup_epochs': self.beta_warmup_epochs,
             'img_size': self.img_size,
-            'max_channels': self.model.max_channels,
-            'min_channels': self.model.min_channels,
-            'bottleneck_spatial': self.model.bottleneck_spatial,
+            'max_channels': getattr(self.model, 'max_channels', None),
+            'min_channels': getattr(self.model, 'min_channels', None),
+            'bottleneck_spatial': getattr(self.model, 'bottleneck_spatial', None),
             'num_workers': self.train_loader.num_workers,
             'n_common_labels': self.n_common_labels,
             'exclude_concepts': self.exclude_concepts
@@ -366,14 +367,14 @@ class VaeTrainer:
 
         print(f"Saved reconstructions to {save_path}")
 
-    def save_checkpoint(self):
+    def save_checkpoint(self, name = "best_model.pth"):
         """
         Save model checkpoint
 
         Args:
             val_loss: Current validation loss to compare against best validation loss
         """
-        checkpoint_path = self.save_dir / f'model_epoch_{self.current_epoch}.pth'
+        checkpoint_path = self.save_dir / f'{name}'
         torch.save({
             'epoch': self.current_epoch,
             'model_state_dict': self.model.state_dict(),
@@ -433,7 +434,7 @@ class VaeTrainer:
             if val_losses['total_loss'] < self.best_val_loss or self.current_epoch % visualize_every == 0 or self.current_epoch == self.num_epochs - 1:
                 self.best_val_loss = val_losses['total_loss']
                 print(f"Validation loss improved to {self.best_val_loss:.4f}. Saving checkpoint...")
-                self.save_checkpoint()
+                self.save_checkpoint(name=f'best_model.pth')
                 self.num_epochs_loss_not_improved = 0  # Reset the counter when loss improves
 
             else:

@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from pytorch_msssim import ssim
 
 
+
 class Encoder(nn.Module):
     """
     Encoder module for VAE.
@@ -214,24 +215,6 @@ class VAE(nn.Module):
                                max_channels=max_channels, min_channels=min_channels,
                                img_size=img_size, bottleneck_spatial=bottleneck_spatial)
 
-    def reparameterize(mu: torch.Tensor, log_var: torch.Tensor) -> torch.Tensor:
-        """
-        Reparameterization trick to sample from the latent distribution.
-        z = mu + exp(0.5 * logvar) * eps
-        where eps ~ N(0, I)
-
-        Args:
-            mu: Mean of the latent distribution [batch_size, latent_dim]
-            log_var: Log variance of the latent distribution [batch_size, latent_dim]
-        Returns:
-            z: Sampled latent vector [batch_size, latent_dim]
-        """
-
-        eps = torch.randn_like(log_var)  # Some random noise to sample from the distribution
-
-        std = torch.exp(0.5 * log_var)  # Standard deviation from log variance
-        z = mu + std * eps  # Reparameterization trick
-        return z
         
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
@@ -248,7 +231,7 @@ class VAE(nn.Module):
 
         mu, log_var = self.encoder(x)  # Get mean and log variance from encoder
 
-        z = self.reparameterize(mu, log_var)  # Sample from the latent distribution
+        z = reparameterize(mu, log_var)  # Sample from the latent distribution
 
         recon_x = self.decoder(z)  # Reconstruct the image from the latent vector
 
@@ -320,6 +303,10 @@ class original_BVAE(nn.Module):
         self.latent_dim = latent_dim
         self.img_size = img_size
         self.input_channels = input_channels
+        self.max_channels = 256
+        self.min_channels = 32
+        self.bottleneck_spatial = 1
+        
         self.encoder = nn.Sequential(
             nn.Conv2d(input_channels, 32, 4, 2, 1),          # B,  32, 32, 32
             nn.ReLU(True),
@@ -331,13 +318,13 @@ class original_BVAE(nn.Module):
             nn.ReLU(True),
             nn.Conv2d(64, 256, 4, 1),            # B, 256,  1,  1
             nn.ReLU(True),
-            View((-1, 256*1*1)),                 # B, 256
+            nn.Flatten(),                 # B, 256
             nn.Linear(256, latent_dim*2),             # B, latent_dim*2
         )
 
         self.decoder = nn.Sequential(
             nn.Linear(latent_dim, 256),           # B, 256
-            View((-1, 256, 1, 1)),               # B, 256, 1, 1
+            nn.Unflatten(1, (256, 1, 1)),               # B, 256, 1, 1
             nn.ReLU(True),
             nn.ConvTranspose2d(256, 64, 4, 1),   # B, 64, 4, 4
             nn.ReLU(True),
@@ -345,22 +332,28 @@ class original_BVAE(nn.Module):
             nn.ReLU(True),
             nn.ConvTranspose2d(64, 32, 4, 2, 1),  # B, 32, 16, 16
             nn.ReLU(True),
-            nn.ConvTranspose2d(32, input_channels, 4, 2, 1), # B, input_channels, 32, 32
+            nn.ConvTranspose2d(32, 32, 4, 2, 1),  # B, 32, 32, 32
+            nn.ReLU(True),
+            nn.ConvTranspose2d(32, input_channels, 4, 2, 1), # B, input_channels, 64, 64
+            nn.Sigmoid()
         )
     
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         h = self.encoder(x)
         mu, log_var = h[:, :self.latent_dim], h[:, self.latent_dim:]
-        z = VAE.reparameterize(mu, log_var)
+        z = reparameterize(mu, log_var)
         recon_x = self.decoder(z)
+        
         return recon_x, mu, log_var
     
-    def _encode(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def encode(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         h = self.encoder(x)
         mu, log_var = h[:, :self.latent_dim], h[:, self.latent_dim:]
         return mu, log_var
 
-    def _decode(self, z: torch.Tensor) -> torch.Tensor:
+    def decode(self, z: torch.Tensor) -> torch.Tensor:
+        if z.dim() == 1:
+            z = z.unsqueeze(0)
         recon_x = self.decoder(z)
         return recon_x
 
@@ -381,7 +374,8 @@ def pixel_reconstruction_loss(x: torch.Tensor, x_recon: torch.Tensor, distributi
     if distribution == "gaussian":
         per_pixel_loss = F.mse_loss(x_recon, x, reduction='none')
     elif distribution == "bernoulli":
-        per_pixel_loss = F.binary_cross_entropy(x_recon, x, reduction='none')
+        with torch.autocast(device_type=x.device.type, enabled=False):
+            per_pixel_loss = F.binary_cross_entropy(x_recon.float(), x.float(), reduction='none')
     else:
         raise ValueError("Invalid distribution type. Choose 'gaussian' or 'bernoulli'.")
 
@@ -389,6 +383,24 @@ def pixel_reconstruction_loss(x: torch.Tensor, x_recon: torch.Tensor, distributi
     loss = per_sample_loss.mean()  # Average over the batch
     return loss
 
+def reparameterize(mu: torch.Tensor, log_var: torch.Tensor) -> torch.Tensor:
+    """
+    Reparameterization trick to sample from the latent distribution.
+    z = mu + exp(0.5 * logvar) * eps
+    where eps ~ N(0, I)
+
+    Args:
+        mu: Mean of the latent distribution [batch_size, latent_dim]
+        log_var: Log variance of the latent distribution [batch_size, latent_dim]
+    Returns:
+        z: Sampled latent vector [batch_size, latent_dim]
+    """
+
+    eps = torch.randn_like(log_var)  # Some random noise to sample from the distribution
+
+    std = torch.exp(0.5 * log_var)  # Standard deviation from log variance
+    z = mu + std * eps  # Reparameterization trick
+    return z
 
 def kl_divergence_loss(mu: torch.Tensor, log_var: torch.Tensor) -> torch.Tensor:
     """

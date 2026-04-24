@@ -211,7 +211,7 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    train_CNN = True
+    train_CNN = False
     train_CNN_1D = True
     train_MLP = True
 
@@ -219,12 +219,12 @@ if __name__ == "__main__":
     batch_size = 32
     num_workers = 2
 
-    n_common_labels = 5
+    n_common_labels = 10
     exclude_concepts = ["misc"]
 
     # params for 1D CNN and MLP
-    latent_dir = "experiments/small/latents"
-    vec_size = 64
+    latent_dir = "experiments/original_05_15/latents"
+    vec_size = 128
 
     if train_CNN == True:
         #img_size = 16
@@ -254,7 +254,7 @@ if __name__ == "__main__":
                             val_loader=val_loader, 
                             device=device,
                             save_dir="./cnn_models",
-                            model_save_name="cnn_experiment__top5",
+                            model_save_name="cnn_experiment_original_top10",
                             n_common_labels=n_common_labels,
                             exclude_concepts=exclude_concepts)
     
@@ -269,7 +269,6 @@ if __name__ == "__main__":
         trainer.train(num_epochs=100)
 
     if train_CNN_1D == True:
-        vec_size = 64
 
         train_loader, val_loader, test_loader = get_dataloaders(root_dir=root_dir, 
                                                 batch_size=batch_size,
@@ -296,7 +295,7 @@ if __name__ == "__main__":
                                 val_loader=val_loader,
                                 device=device,
                                 save_dir="./cnn_models",
-                                model_save_name="cnn_1d_experiment_2_small_VAE",
+                                model_save_name="cnn_1d_experiment_original_VAE",
                                 n_common_labels=n_common_labels,
                                 exclude_concepts=exclude_concepts,
                                 latent_dir=latent_dir)
@@ -304,7 +303,6 @@ if __name__ == "__main__":
         trainer_1D.train(num_epochs=100)
 
     if train_MLP == True:
-        vec_size = 64
 
         train_loader, val_loader, test_loader = get_dataloaders(root_dir=root_dir, 
                                                 batch_size=batch_size,
@@ -325,7 +323,7 @@ if __name__ == "__main__":
                                 val_loader=val_loader,
                                 device=device,
                                 save_dir="./cnn_models",
-                                model_save_name="mlp_experiment_2_small_VAE",
+                                model_save_name="mlp_experiment_original_VAE",
                                 n_common_labels=n_common_labels,
                                 exclude_concepts=exclude_concepts,
                                 latent_dir=latent_dir)

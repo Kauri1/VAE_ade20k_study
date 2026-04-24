@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 
 from tqdm import tqdm
 
-from vae_model import VAE
+from vae_model import VAE, original_BVAE
 from ade20k_dataset import get_dataloaders
 from train_vae import VaeTrainer
 from latent_space_analysis import ConceptSampler, LatentSpaceSampler, LatentSpaceVisualizer
@@ -64,16 +64,27 @@ def train_beta_vae(config: dict):
     else:
         print("No checkpoint path provided. Training from scratch.")
 
-    model = VAE(
-        input_channels=3,
-        latent_dim=config['latent_dim'],
-        img_size=config['img_size'],
-        max_channels=config['max_channels'],
-        min_channels=config['min_channels'],
-        bottleneck_spatial=config['bottleneck_spatial']
-    )
+    model_type = config.get('model_type', 'VAE')
+    if model_type == 'original_BVAE':
+        model = original_BVAE(
+            input_channels=3,
+            latent_dim=config['latent_dim'],
+            img_size=config['img_size']
+        )
+    else:
+        model = VAE(
+            input_channels=3,
+            latent_dim=config['latent_dim'],
+            img_size=config['img_size'],
+            max_channels=config['max_channels'],
+            min_channels=config['min_channels'],
+            bottleneck_spatial=config['bottleneck_spatial']
+        )
 
-    model.print_architecture()
+    if hasattr(model, 'print_architecture'):
+        model.print_architecture()
+    else:
+        print(model)
 
     trainer = VaeTrainer(
         model=model,
@@ -419,6 +430,7 @@ def main():
     parser.add_argument('--experiment_name', type=str, default='beta_vae_experiment', help='Name of the experiment (used for organizing results)')
     parser.add_argument('--skip_training', action='store_true', help='Whether to skip training and only run interpretability analysis')
     parser.add_argument('--checkpoint_path', type=str, default=None, help='Path to a model checkpoint to load (optional)')
+    parser.add_argument('--model_type', type=str, default='VAE', choices=['VAE', 'original_BVAE'], help='Which VAE model architecture to use')
 
     #Model and training hyperparameters
     parser.add_argument('--latent_dim', type=int, default=128, help='Dimensionality of the latent space')
@@ -430,8 +442,8 @@ def main():
     parser.add_argument('--beta_start', type=float, default=None, help='Starting value of beta for warmup')
     parser.add_argument('--beta_warmup_epochs', type=int, default=10, help='Number of epochs to warm up beta from beta_start to beta')
     parser.add_argument('--recon_weight', type=float, default=1.0, help='Weight for the reconstruction loss')
-    parser.add_argument('--ssim_weight', type=float, default=0.5, help='Weight for the SSIM loss')
-    parser.add_argument('--label_distance_loss_weight', type=float, default=0.1, help='Weight for the label distance loss (requires labels in dataset and implementation in model)')
+    parser.add_argument('--ssim_weight', type=float, default=0.0, help='Weight for the SSIM loss')
+    parser.add_argument('--label_distance_loss_weight', type=float, default=0.0, help='Weight for the label distance loss (requires labels in dataset and implementation in model)')
 
     # Training hyperparameters
     parser.add_argument('--batch_size', type=int, default=32, help='Batch size for training and validation')
@@ -452,12 +464,17 @@ def main():
     parser.add_argument('--exclude_concepts', type=str, nargs='+', default=None, help='Concepts to exclude from analysis (e.g., "wall floor")')
     args = parser.parse_args()
 
+    if getattr(args, 'model_type', 'VAE') == 'original_BVAE':
+        print("Model type is original_BVAE. Enforcing img_size=64.")
+        args.img_size = 64
+
     config = {
         'data_dir': args.data_dir,
         'save_dir': args.save_dir,
         'experiment_name': args.experiment_name,
         'skip_training': args.skip_training,
         'checkpoint_path': args.checkpoint_path,
+        'model_type': args.model_type,
         'latent_dim': args.latent_dim,
         'max_channels': args.max_channels,
         'min_channels': args.min_channels,

@@ -7,7 +7,7 @@ import seaborn as sns
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
-from vae_model import VAE
+from vae_model import VAE, reparameterize
 
 class LatentSpaceSampler:
     """
@@ -85,7 +85,7 @@ class LatentSpaceSampler:
             Tensor of shape (batch_size, 3, img_size, img_size) containing the reconstructed images
         """        
         mu, log_var = self.encode_images(images)
-        z = self.model.reparameterize(mu, log_var)
+        z = reparameterize(mu, log_var)
         reconstructed_images = self.decode_latent_vectors(z)
         return reconstructed_images
     
@@ -303,7 +303,7 @@ class LatentSpaceVisualizer:
         """
         print(f"Visualizing {images.size(0)} images with {in_row} images per row...")
 
-        # Move images to CPU and convert to numpy
+
         images = images.cpu()
 
         rows = (images.size(0) + in_row - 1) // in_row if in_row > 0 else 1
