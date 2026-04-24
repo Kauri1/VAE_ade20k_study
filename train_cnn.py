@@ -211,20 +211,24 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    train_CNN = False
-    train_CNN_1D = False
+    train_CNN = True
+    train_CNN_1D = True
     train_MLP = True
 
     root_dir = "ade20k_data/ADEData2016"
     batch_size = 32
-    num_workers = 4
+    num_workers = 2
 
-    n_common_labels = 10
+    n_common_labels = 5
     exclude_concepts = ["misc"]
+
+    # params for 1D CNN and MLP
+    latent_dir = "experiments/small/latents"
+    vec_size = 64
 
     if train_CNN == True:
         #img_size = 16
-        img_size = 256
+        img_size = 64
         
 
         train_loader, val_loader, test_loader = get_dataloaders(root_dir=root_dir, 
@@ -232,7 +236,7 @@ if __name__ == "__main__":
                                                 img_size=img_size, 
                                                 num_workers=num_workers,
                                                 train_augmentation=True,
-                                                #latent_dir="experiments/good_v2_top3/latents",
+                                                #latent_dir=latent_dir,
                                                 n_common_labels=n_common_labels,
                                                 exclude_concepts=exclude_concepts
                                                 )
@@ -250,7 +254,7 @@ if __name__ == "__main__":
                             val_loader=val_loader, 
                             device=device,
                             save_dir="./cnn_models",
-                            model_save_name="cnn_experiment_3",
+                            model_save_name="cnn_experiment__top5",
                             n_common_labels=n_common_labels,
                             exclude_concepts=exclude_concepts)
     
@@ -265,14 +269,14 @@ if __name__ == "__main__":
         trainer.train(num_epochs=100)
 
     if train_CNN_1D == True:
-        vec_size = 256
+        vec_size = 64
 
         train_loader, val_loader, test_loader = get_dataloaders(root_dir=root_dir, 
                                                 batch_size=batch_size,
                                                 img_size=vec_size, 
                                                 num_workers=num_workers,
                                                 train_augmentation=False,
-                                                latent_dir="experiments/good_v2_exclude_misc/latents",
+                                                latent_dir=latent_dir,
                                                 n_common_labels=n_common_labels,
                                                 exclude_concepts=exclude_concepts
                                                 )
@@ -292,22 +296,22 @@ if __name__ == "__main__":
                                 val_loader=val_loader,
                                 device=device,
                                 save_dir="./cnn_models",
-                                model_save_name="cnn_1d_experiment_1",
+                                model_save_name="cnn_1d_experiment_2_small_VAE",
                                 n_common_labels=n_common_labels,
                                 exclude_concepts=exclude_concepts,
-                                latent_dir="experiments/good_v2_exclude_misc/latents")
+                                latent_dir=latent_dir)
         
         trainer_1D.train(num_epochs=100)
 
     if train_MLP == True:
-        vec_size = 256
+        vec_size = 64
 
         train_loader, val_loader, test_loader = get_dataloaders(root_dir=root_dir, 
                                                 batch_size=batch_size,
                                                 img_size=vec_size, 
                                                 num_workers=num_workers,
                                                 train_augmentation=False,
-                                                latent_dir="experiments/good_v2_exclude_misc/latents",
+                                                latent_dir=latent_dir,
                                                 n_common_labels=n_common_labels,
                                                 exclude_concepts=exclude_concepts
                                                 )
@@ -321,9 +325,9 @@ if __name__ == "__main__":
                                 val_loader=val_loader,
                                 device=device,
                                 save_dir="./cnn_models",
-                                model_save_name="mlp_experiment_1",
+                                model_save_name="mlp_experiment_2_small_VAE",
                                 n_common_labels=n_common_labels,
                                 exclude_concepts=exclude_concepts,
-                                latent_dir="experiments/good_v2_exclude_misc/latents")
+                                latent_dir=latent_dir)
         
         trainer_MLP.train(num_epochs=100)

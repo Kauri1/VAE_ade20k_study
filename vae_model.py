@@ -107,6 +107,7 @@ class Encoder(nn.Module):
         print(f"  fc_mu:      [{self.flatten_size:,}] -> [{self.latent_dim}]")
         print(f"  fc_logvar:  [{self.flatten_size:,}] -> [{self.latent_dim}]")
 
+
 class Decoder(nn.Module):
     """
     latent -> net -> recon_img
@@ -213,7 +214,7 @@ class VAE(nn.Module):
                                max_channels=max_channels, min_channels=min_channels,
                                img_size=img_size, bottleneck_spatial=bottleneck_spatial)
 
-    def reparameterize(self, mu: torch.Tensor, log_var: torch.Tensor) -> torch.Tensor:
+    def reparameterize(mu: torch.Tensor, log_var: torch.Tensor) -> torch.Tensor:
         """
         Reparameterization trick to sample from the latent distribution.
         z = mu + exp(0.5 * logvar) * eps
@@ -269,7 +270,7 @@ class VAE(nn.Module):
     def decode(self, z: torch.Tensor) -> torch.Tensor:
         """
         Decode a latent vector into an image.
-
+        
         Args:
             z: Latent vector tensor of shape [batch_size, latent_dim]
 
@@ -310,18 +311,80 @@ class VAE(nn.Module):
         print(f"  Total parameters: {total_params:,}")
         print("=" * 60 + "\n")
     
-def pixel_reconstruction_loss(x: torch.Tensor, x_recon: torch.Tensor) -> torch.Tensor:
+
+class original_BVAE(nn.Module):
+    """Model proposed in original beta-VAE paper(Higgins et al, ICLR, 2017)."""
+
+    def __init__(self, input_channels: int = 3, latent_dim: int = 10, img_size: int = 64):
+        super(original_BVAE, self).__init__()
+        self.latent_dim = latent_dim
+        self.img_size = img_size
+        self.input_channels = input_channels
+        self.encoder = nn.Sequential(
+            nn.Conv2d(input_channels, 32, 4, 2, 1),          # B,  32, 32, 32
+            nn.ReLU(True),
+            nn.Conv2d(32, 32, 4, 2, 1),          # B,  32, 16, 16
+            nn.ReLU(True),
+            nn.Conv2d(32, 64, 4, 2, 1),          # B,  64,  8,  8
+            nn.ReLU(True),
+            nn.Conv2d(64, 64, 4, 2, 1),          # B,  64,  4,  4
+            nn.ReLU(True),
+            nn.Conv2d(64, 256, 4, 1),            # B, 256,  1,  1
+            nn.ReLU(True),
+            View((-1, 256*1*1)),                 # B, 256
+            nn.Linear(256, latent_dim*2),             # B, latent_dim*2
+        )
+
+        self.decoder = nn.Sequential(
+            nn.Linear(latent_dim, 256),           # B, 256
+            View((-1, 256, 1, 1)),               # B, 256, 1, 1
+            nn.ReLU(True),
+            nn.ConvTranspose2d(256, 64, 4, 1),   # B, 64, 4, 4
+            nn.ReLU(True),
+            nn.ConvTranspose2d(64, 64, 4, 2, 1),  # B, 64, 8, 8
+            nn.ReLU(True),
+            nn.ConvTranspose2d(64, 32, 4, 2, 1),  # B, 32, 16, 16
+            nn.ReLU(True),
+            nn.ConvTranspose2d(32, input_channels, 4, 2, 1), # B, input_channels, 32, 32
+        )
+    
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        h = self.encoder(x)
+        mu, log_var = h[:, :self.latent_dim], h[:, self.latent_dim:]
+        z = VAE.reparameterize(mu, log_var)
+        recon_x = self.decoder(z)
+        return recon_x, mu, log_var
+    
+    def _encode(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        h = self.encoder(x)
+        mu, log_var = h[:, :self.latent_dim], h[:, self.latent_dim:]
+        return mu, log_var
+
+    def _decode(self, z: torch.Tensor) -> torch.Tensor:
+        recon_x = self.decoder(z)
+        return recon_x
+
+
+
+def pixel_reconstruction_loss(x: torch.Tensor, x_recon: torch.Tensor, distribution: str = "bernoulli") -> torch.Tensor:
     """
-    Compute the pixel-wise reconstruction loss (MSE) between the reconstructed image and the original image.
+    Compute the pixel-wise reconstruction loss between the reconstructed image and the original image.
 
     Args:
         x: Original image tensor [batch_size, input_channels, img_size, img_size]
         x_recon: Reconstructed image tensor [batch_size, input_channels, img_size, img_size]
+        distribution: Type of distribution for the reconstruction loss ("gaussian" or "bernoulli")
 
     Returns:
-        loss: Pixel-wise reconstruction loss (MSE)
+        loss: Pixel-wise reconstruction loss
     """
-    per_pixel_loss = F.mse_loss(x_recon, x, reduction='none')
+    if distribution == "gaussian":
+        per_pixel_loss = F.mse_loss(x_recon, x, reduction='none')
+    elif distribution == "bernoulli":
+        per_pixel_loss = F.binary_cross_entropy(x_recon, x, reduction='none')
+    else:
+        raise ValueError("Invalid distribution type. Choose 'gaussian' or 'bernoulli'.")
+
     per_sample_loss = per_pixel_loss.reshape(per_pixel_loss.size(0), -1).sum(dim=1)  # Average over all pixels for each sample
     loss = per_sample_loss.mean()  # Average over the batch
     return loss
