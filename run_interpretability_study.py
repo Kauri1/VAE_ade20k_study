@@ -442,7 +442,7 @@ def main():
     parser.add_argument('--train_augmentation', default=True, action='store_true', help='Whether to apply data augmentation during training')
     parser.add_argument('--use_amp', default=True, action='store_true', help='Whether to use automatic mixed precision for training')
     parser.add_argument('--use_channels_last', default=False, action='store_true', help='Whether to use channels_last memory format for training (can improve performance on some GPUs)')
-    parser.add_argument('--visualize_every', type=int, default=5, help='Frequency (in epochs) to visualize reconstructions during training')
+    parser.add_argument('--visualize_every', type=int, default=10, help='Frequency (in epochs) to visualize reconstructions during training')
 
     #Analysis hyperparameters
     parser.add_argument('--max_samples', type=int, default=2000, help='Maximum samples for analysis')
