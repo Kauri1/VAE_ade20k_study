@@ -17,7 +17,7 @@ class ADE20KDataset(Dataset):
                  split: str = 'training',
                  img_size: int = 256,
                  transform: Optional[Callable] = None,
-                 n_common_labels: Optional[InterruptedError] = None,
+                 n_common_labels: Optional[int] = None,
                  exclude_concepts: Optional[list] = None,
                  latent_dir: Optional[str] = None,
                  sub_split: Optional[str] = None,
@@ -295,15 +295,17 @@ def get_dataloaders(root_dir: str,
         pad_size = max(8, img_size // 6)
         train_transform = transforms.Compose([
             transforms.Pad(padding=pad_size, padding_mode="reflect"),
-            transforms.RandomRotation(degrees=20),
+            transforms.RandomRotation(degrees=5),
+            transforms.Resize((img_size+pad_size, img_size+pad_size)),
             transforms.CenterCrop(size=img_size),
             transforms.RandomResizedCrop(
                 img_size,
-                scale=(0.6, 2.0),
-                ratio=(0.8, 1.2)
+                scale=(0.8, 1),
+                ratio=(0.9, 1.1)
             ),
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05),
+            transforms.RandomAdjustSharpness(sharpness_factor=5),
             transforms.ToTensor(),
         ])
     else:

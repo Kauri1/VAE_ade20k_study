@@ -296,7 +296,9 @@ class VAE(nn.Module):
     
 
 class original_BVAE(nn.Module):
-    """Model proposed in original beta-VAE paper(Higgins et al, ICLR, 2017)."""
+    """Model proposed in original beta-VAE paper(Higgins et al, ICLR, 2017).
+    [1, 3, 64, 64] -> [1, 32, 32, 32] -> [1, 32, 16, 16] -> [1, 64, 8, 8] -> [1, 64, 4, 4] -> [1, 256, 1, 1] -> [1, 256] -> [1, 2*latent_dim] -> mu/log_var -> z
+    """
 
     def __init__(self, input_channels: int = 3, latent_dim: int = 10, img_size: int = 64):
         super(original_BVAE, self).__init__()
@@ -357,6 +359,67 @@ class original_BVAE(nn.Module):
         recon_x = self.decoder(z)
         return recon_x
 
+class SimpleVAE(nn.Module):
+    
+    def __init__(self, input_channels: int = 3, latent_dim: int = 10):
+        super(SimpleVAE, self).__init__()
+        self.latent_dim = latent_dim
+        self.input_channels = input_channels
+
+        self.encoder = nn.Sequential(
+            nn.Conv2d(input_channels, 32, kernel_size=4, stride=2, padding=1),   # 64 -> 32
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=1),  # 32 -> 16
+            nn.ReLU(),
+            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1), # 16 -> 8
+            nn.ReLU()
+        )
+
+        self.flatten_dim = 128 * 8 * 8
+
+        self.fc_mu = nn.Linear(self.flatten_dim, latent_dim)
+        self.fc_logvar = nn.Linear(self.flatten_dim, latent_dim)
+
+        # Decoder
+        self.fc_decode = nn.Linear(latent_dim, self.flatten_dim)
+
+        self.decoder = nn.Sequential(
+            nn.ConvTranspose2d(128, 64, kernel_size=3, stride=2,
+                               padding=1, output_padding=1),         # 8 -> 16
+            nn.ReLU(),
+            nn.ConvTranspose2d(64, 32, kernel_size=4, stride=2,
+                               padding=1),                           # 16 -> 32
+            nn.ReLU(),
+            nn.ConvTranspose2d(32, input_channels, kernel_size=4, stride=2,
+                               padding=1),                           # 32 -> 64
+            nn.Sigmoid()
+        )
+
+    def encode(self, x):
+        h = self.encoder(x)
+        h = h.view(x.size(0), -1)
+        mu = self.fc_mu(h)
+        logvar = self.fc_logvar(h)
+        return mu, logvar
+
+    def reparameterize(self, mu, logvar):
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return mu + eps * std
+
+    def decode(self, z):
+        h = self.fc_decode(z)
+        h = h.view(z.size(0), 128, 8, 8)
+        x_recon = self.decoder(h)
+
+        # crop from 64x64 back to 64x64 for ADE20K
+        return x_recon[:, :, 0:64, 0:64]
+
+    def forward(self, x):
+        mu, logvar = self.encode(x)
+        z = self.reparameterize(mu, logvar)
+        recon_x = self.decode(z)
+        return recon_x, mu, logvar
 
 
 def pixel_reconstruction_loss(x: torch.Tensor, x_recon: torch.Tensor, distribution: str = "bernoulli") -> torch.Tensor:
@@ -379,7 +442,10 @@ def pixel_reconstruction_loss(x: torch.Tensor, x_recon: torch.Tensor, distributi
     else:
         raise ValueError("Invalid distribution type. Choose 'gaussian' or 'bernoulli'.")
 
-    per_sample_loss = per_pixel_loss.reshape(per_pixel_loss.size(0), -1).sum(dim=1)  # Average over all pixels for each sample
+    # Flatten and reduce: sum over pixels, then average over batch
+    batch_size = x.size(0)
+    per_sample_loss = per_pixel_loss.reshape(batch_size, -1).sum(dim=1)  # Sum over all pixels for each sample
+    #per_sample_loss = per_pixel_loss.reshape(batch_size, -1).mean(dim=1)  # Mean over all pixels for each sample
     loss = per_sample_loss.mean()  # Average over the batch
     return loss
 

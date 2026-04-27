@@ -26,10 +26,10 @@ class CNNTrainer:
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.device = device
-        
+
         self.save_dir = Path(save_dir) / model_save_name
         self.save_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Extract architecture configurations and save them to a config.json string
         self.config = {
             "model_type": self.model.__class__.__name__,
@@ -42,7 +42,7 @@ class CNNTrainer:
             "latent_dir": latent_dir
         }
         
-        
+
         with open(self.save_dir / "config.json", "w") as f:
             json.dump(self.config, f, indent=4)
 
@@ -66,7 +66,7 @@ class CNNTrainer:
         epoch_loss = 0.0
         epoch_accuracy = 0.0
 
-        loop = tqdm(self.train_loader, desc=f"Epoch {self.current_epoch} Training", dynamic_ncols=True, leave=False)
+        loop = tqdm(self.train_loader, desc=f"Epoch {self.current_epoch}/{self.num_epochs} [Train]", dynamic_ncols=True, leave=False)
 
         for batch_idx, (images, labels) in enumerate(loop):
             images = images.to(self.device)
@@ -122,7 +122,7 @@ class CNNTrainer:
         epoch_loss = 0.0
         epoch_accuracy = 0.0
 
-        loop = tqdm(self.val_loader, desc=f"Epoch {self.current_epoch} Validation", dynamic_ncols=True, leave=False)
+        loop = tqdm(self.val_loader, desc=f"Epoch {self.current_epoch}/{self.num_epochs} [Val]", dynamic_ncols=True, leave=False)
 
         with torch.no_grad():
             for batch_idx, (images, labels) in enumerate(loop):
@@ -217,14 +217,29 @@ if __name__ == "__main__":
 
     root_dir = "ade20k_data/ADEData2016"
     batch_size = 32
-    num_workers = 2
+    num_workers = 4
+    num_epochs = 1000
 
-    n_common_labels = 10
+    n_common_labels = 5
     exclude_concepts = ["misc"]
 
-    # params for 1D CNN and MLP
-    latent_dir = "experiments/original_05_15/latents"
-    vec_size = 128
+    #params for 1D CNN and MLP
+    latent_dirs = [
+        "experiments/max2_simple_T5_B0_2_L128_s/latents",
+        "experiments/max2_custom_T5_B0_4_L256/latents",
+        "experiments/max2_original_T5_B0_4_L256/latents",
+        ]
+    names = [
+        "max2_simple_T5_B0_2_L128_s",
+        "max2_custom_T5_B0_4_L256",
+        "max2_original_T5_B0_4_L256",
+        ]
+    
+    vec_sizes = [
+        128,
+        256,
+        256,
+        ]
 
     if train_CNN == True:
         #img_size = 16
@@ -254,7 +269,7 @@ if __name__ == "__main__":
                             val_loader=val_loader, 
                             device=device,
                             save_dir="./cnn_models",
-                            model_save_name="cnn_experiment_original_top10",
+                            model_save_name=f"cnn_experiment_T5_64",
                             n_common_labels=n_common_labels,
                             exclude_concepts=exclude_concepts)
     
@@ -266,66 +281,84 @@ if __name__ == "__main__":
         #writer.add_graph(model, torch.randn(1, 3, img_size, img_size).to(device))
         #writer.close()
 
-        trainer.train(num_epochs=100)
-
-    if train_CNN_1D == True:
-
-        train_loader, val_loader, test_loader = get_dataloaders(root_dir=root_dir, 
-                                                batch_size=batch_size,
-                                                img_size=vec_size, 
-                                                num_workers=num_workers,
-                                                train_augmentation=False,
-                                                latent_dir=latent_dir,
-                                                n_common_labels=n_common_labels,
-                                                exclude_concepts=exclude_concepts
-                                                )
+        trainer.train(num_epochs=num_epochs)
         
-        print(f"Number of training batches: {len(train_loader)}")
-        print(f"Number of validation batches: {len(val_loader)}")
+        trainer.load_model(str(trainer.save_dir / "cnn_model.pth"))
+        from run_cnn_study import evaluate_model
+        evaluate_model(trainer, test_loader, {"save_dir": "./cnn_evaluations", "model_path": str(trainer.save_dir / "cnn_model.pth"), "num_classes": num_classes})
 
-        num_classes = len(train_loader.dataset.unique_classes)
-        print(f"Number of classes: {num_classes}")
+    if train_CNN_1D == True or train_MLP == True:
+        for name, latent_dir, vec_size in zip(names, latent_dirs, vec_sizes):
+            print(f"\n\nStarting experiment {name} with latent_dir={latent_dir} and vec_size={vec_size}...\n\n")
 
-        batch = next(iter(train_loader))
-        print(f"Batch shape: {batch[0].shape}, Labels shape: {batch[1].shape}")
+            
 
-        model_1D = CNN_1D(num_classes=num_classes, input_size=vec_size)
-        trainer_1D = CNNTrainer(model=model_1D,
-                                train_loader=train_loader,
-                                val_loader=val_loader,
-                                device=device,
-                                save_dir="./cnn_models",
-                                model_save_name="cnn_1d_experiment_original_VAE",
-                                n_common_labels=n_common_labels,
-                                exclude_concepts=exclude_concepts,
-                                latent_dir=latent_dir)
-        
-        trainer_1D.train(num_epochs=100)
+            if train_CNN_1D == True:
 
-    if train_MLP == True:
+                train_loader, val_loader, test_loader = get_dataloaders(root_dir=root_dir, 
+                                                        batch_size=batch_size,
+                                                        img_size=vec_size, 
+                                                        num_workers=num_workers,
+                                                        train_augmentation=False,
+                                                        latent_dir=latent_dir,
+                                                        n_common_labels=n_common_labels,
+                                                        exclude_concepts=exclude_concepts
+                                                        )
+                
+                print(f"Number of training batches: {len(train_loader)}")
+                print(f"Number of validation batches: {len(val_loader)}")
 
-        train_loader, val_loader, test_loader = get_dataloaders(root_dir=root_dir, 
-                                                batch_size=batch_size,
-                                                img_size=vec_size, 
-                                                num_workers=num_workers,
-                                                train_augmentation=False,
-                                                latent_dir=latent_dir,
-                                                n_common_labels=n_common_labels,
-                                                exclude_concepts=exclude_concepts
-                                                )
-        
-        num_classes = len(train_loader.dataset.unique_classes)
-        print(f"MLP Training - Number of classes: {num_classes}")
+                num_classes = len(train_loader.dataset.unique_classes)
+                print(f"Number of classes: {num_classes}")
 
-        model_MLP = MLP(num_classes=num_classes, input_size=vec_size)
-        trainer_MLP = CNNTrainer(model=model_MLP,
-                                train_loader=train_loader,
-                                val_loader=val_loader,
-                                device=device,
-                                save_dir="./cnn_models",
-                                model_save_name="mlp_experiment_original_VAE",
-                                n_common_labels=n_common_labels,
-                                exclude_concepts=exclude_concepts,
-                                latent_dir=latent_dir)
-        
-        trainer_MLP.train(num_epochs=100)
+                batch = next(iter(train_loader))
+                print(f"Batch shape: {batch[0].shape}, Labels shape: {batch[1].shape}")
+
+                model_1D = CNN_1D(num_classes=num_classes, input_size=vec_size)
+                trainer_1D = CNNTrainer(model=model_1D,
+                                        train_loader=train_loader,
+                                        val_loader=val_loader,
+                                        device=device,
+                                        save_dir="./cnn_models",
+                                        model_save_name=f"cnn_1d_experiment_{name}",
+                                        n_common_labels=n_common_labels,
+                                        exclude_concepts=exclude_concepts,
+                                        latent_dir=latent_dir)
+                
+                trainer_1D.train(num_epochs=num_epochs)
+                
+                trainer_1D.load_model(str(trainer_1D.save_dir / "cnn_model.pth"))
+                from run_cnn_study import evaluate_model
+                evaluate_model(trainer_1D, test_loader, {"save_dir": "./cnn_evaluations", "model_path": str(trainer_1D.save_dir / "cnn_model.pth"), "num_classes": num_classes})
+
+            if train_MLP == True:
+
+                train_loader, val_loader, test_loader = get_dataloaders(root_dir=root_dir, 
+                                                        batch_size=batch_size,
+                                                        img_size=vec_size, 
+                                                        num_workers=num_workers,
+                                                        train_augmentation=False,
+                                                        latent_dir=latent_dir,
+                                                        n_common_labels=n_common_labels,
+                                                        exclude_concepts=exclude_concepts
+                                                        )
+                
+                num_classes = len(train_loader.dataset.unique_classes)
+                print(f"MLP Training - Number of classes: {num_classes}")
+
+                model_MLP = MLP(num_classes=num_classes, input_size=vec_size)
+                trainer_MLP = CNNTrainer(model=model_MLP,
+                                        train_loader=train_loader,
+                                        val_loader=val_loader,
+                                        device=device,
+                                        save_dir="./cnn_models",
+                                        model_save_name=f"mlp_experiment_{name}",
+                                        n_common_labels=n_common_labels,
+                                        exclude_concepts=exclude_concepts,
+                                        latent_dir=latent_dir)
+                
+                trainer_MLP.train(num_epochs=num_epochs)
+                
+                trainer_MLP.load_model(str(trainer_MLP.save_dir / "cnn_model.pth"))
+                from run_cnn_study import evaluate_model
+                evaluate_model(trainer_MLP, test_loader, {"save_dir": "./cnn_evaluations", "model_path": str(trainer_MLP.save_dir / "cnn_model.pth"), "num_classes": num_classes})

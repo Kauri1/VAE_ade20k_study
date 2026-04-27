@@ -1,4 +1,3 @@
-from xml.parsers.expat import model
 
 import torch
 import argparse
@@ -10,7 +9,7 @@ from torch.utils.data import DataLoader
 
 from tqdm import tqdm
 
-from vae_model import VAE, original_BVAE
+from vae_model import VAE, original_BVAE, SimpleVAE
 from ade20k_dataset import get_dataloaders
 from train_vae import VaeTrainer
 from latent_space_analysis import ConceptSampler, LatentSpaceSampler, LatentSpaceVisualizer
@@ -70,6 +69,12 @@ def train_beta_vae(config: dict):
             input_channels=3,
             latent_dim=config['latent_dim'],
             img_size=config['img_size']
+        )
+    elif model_type == 'simple_VAE':
+        # A simpler VAE architecture for testing and ablation purposes
+        model = SimpleVAE(
+            input_channels=3,
+            latent_dim=config['latent_dim']
         )
     else:
         model = VAE(
@@ -430,7 +435,7 @@ def main():
     parser.add_argument('--experiment_name', type=str, default='beta_vae_experiment', help='Name of the experiment (used for organizing results)')
     parser.add_argument('--skip_training', action='store_true', help='Whether to skip training and only run interpretability analysis')
     parser.add_argument('--checkpoint_path', type=str, default=None, help='Path to a model checkpoint to load (optional)')
-    parser.add_argument('--model_type', type=str, default='VAE', choices=['VAE', 'original_BVAE'], help='Which VAE model architecture to use')
+    parser.add_argument('--model_type', type=str, default='VAE', choices=['VAE', 'original_BVAE', 'simple_VAE'], help='Which VAE model architecture to use')
 
     #Model and training hyperparameters
     parser.add_argument('--latent_dim', type=int, default=128, help='Dimensionality of the latent space')
@@ -449,7 +454,7 @@ def main():
     parser.add_argument('--batch_size', type=int, default=32, help='Batch size for training and validation')
     parser.add_argument('--num_epochs', type=int, default=50, help='Number of epochs to train the VAE')
     parser.add_argument('--learning_rate', type=float, default=1e-4, help='Learning rate for training the VAE')
-    parser.add_argument('--img_size', type=int, default=256, help='Input image size (images will be resized to this size)')
+    parser.add_argument('--img_size', type=int, default=64, help='Input image size (images will be resized to this size)')
     parser.add_argument('--num_workers', type=int, default=4, help='Number of worker processes for data loading')
     parser.add_argument('--train_augmentation', default=True, action='store_true', help='Whether to apply data augmentation during training')
     parser.add_argument('--use_amp', default=True, action='store_true', help='Whether to use automatic mixed precision for training')
@@ -464,8 +469,8 @@ def main():
     parser.add_argument('--exclude_concepts', type=str, nargs='+', default=None, help='Concepts to exclude from analysis (e.g., "wall floor")')
     args = parser.parse_args()
 
-    if getattr(args, 'model_type', 'VAE') == 'original_BVAE':
-        print("Model type is original_BVAE. Enforcing img_size=64.")
+    if getattr(args, 'model_type', 'VAE') in ['original_BVAE', 'simple_VAE']:
+        print("Model type is original_BVAE or simple_VAE. Enforcing img_size=64.")
         args.img_size = 64
 
     config = {

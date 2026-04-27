@@ -39,6 +39,7 @@ class VaeTrainer:
                  experiment_name: str = 'beta_vae_experiment',
                  use_amp: bool = True,
                  use_channels_last: bool = True,
+                 use_compile: bool = False,
                  img_size: int = 256,
                  recon_weight: float = 1.0,
                  ssim_weight: float = 0.0,
@@ -58,6 +59,7 @@ class VaeTrainer:
             save_dir: Directory to save model checkpoints and logs
             use_amp: Whether to use Automatic Mixed Precision (AMP) for faster training
             use_channels_last: Whether to use channels-last memory format for better performance on GPUs
+            use_compile: Whether to use torch.compile() for faster training (first epoch will be slower)
             img_size: Image size (images will be resized to img_size x img_size)
             recon_weight: Weight for reconstruction loss in total loss calculation
             ssim_weight: Weight for SSIM loss in total loss calculation
@@ -80,6 +82,11 @@ class VaeTrainer:
         self.model = model.to(self.device)
         if self.use_channels_last:
             self.model = self.model.to(memory_format=torch.channels_last)
+        if use_compile and self.device_type == 'cuda':
+            print("Compiling model with torch.compile")
+            #self.model = torch.compile(self.model, mode='max-autotune')
+            self.model = torch.compile(self.model, mode='reduce-overhead')
+
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.beta = beta
@@ -108,7 +115,7 @@ class VaeTrainer:
         self.global_step = 0
         self.best_val_loss = float('inf')
         self.num_epochs_loss_not_improved = 0
-        self.early_stopping_patience = 10 
+        self.early_stopping_patience = 20 
 
         self.save_config(learning_rate)
 
@@ -163,7 +170,7 @@ class VaeTrainer:
         beta = self.get_current_beta()
 
         loop = tqdm(self.train_loader, 
-                    desc=f"Epoch {self.current_epoch}/{self.num_epochs} [Train]", 
+                    desc=f"Epoch {self.current_epoch + 1}/{self.num_epochs} [Train]", 
                     unit="batch",
                     dynamic_ncols=True)
 
@@ -178,6 +185,16 @@ class VaeTrainer:
             # Forward pass
             with autocast(device_type=self.device_type, enabled=self.use_amp):
                 recon_images, mu, logvar = self.model(images)
+
+                # if batch_idx % 100 == 0:  # Print every 100 batches
+                #     mu_vals = mu.detach().cpu().numpy()
+                #     logvar_vals = logvar.detach().cpu().numpy()
+                #     print(f"\n[Epoch {self.current_epoch}, Batch {batch_idx}]")
+                #     print(f"  mu mean: {mu_vals.mean():.4f}, std: {mu_vals.std():.4f}")
+                #     print(f"  logvar mean: {logvar_vals.mean():.4f}, std: {logvar_vals.std():.4f}")
+                #     print(f"  exp(logvar) mean: {np.exp(logvar_vals).mean():.4f}")
+                #     print(f"  mu min/max: {mu_vals.min():.4f} / {mu_vals.max():.4f}")
+                #     print(f"  logvar min/max: {logvar_vals.min():.4f} / {logvar_vals.max():.4f}")
 
                 losses = vae_loss(
                     x = images,
@@ -262,7 +279,7 @@ class VaeTrainer:
         current_beta = self.get_current_beta()
 
         loop = tqdm(self.val_loader, 
-                    desc=f"Epoch {self.current_epoch}/{self.num_epochs} [Val]", 
+                    desc=f"Epoch {self.current_epoch + 1}/{self.num_epochs} [Val]", 
                     unit="batch",
                     dynamic_ncols=True)
 
@@ -358,11 +375,11 @@ class VaeTrainer:
         
         plt.tight_layout()
 
-        save_path = self.save_dir / f'reconstructions_epoch_{self.current_epoch}.png'
+        save_path = self.save_dir / f'reconstructions_epoch_{self.current_epoch + 1}.png'
 
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
 
-        self.writer.add_figure('Reconstruction', fig, self.current_epoch)
+        self.writer.add_figure('Reconstruction', fig, self.current_epoch + 1)
         plt.close()
 
         print(f"Saved reconstructions to {save_path}")
@@ -376,7 +393,7 @@ class VaeTrainer:
         """
         checkpoint_path = self.save_dir / f'{name}'
         torch.save({
-            'epoch': self.current_epoch,
+            'epoch': self.current_epoch + 1,
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'best_val_loss': self.best_val_loss,
@@ -421,7 +438,7 @@ class VaeTrainer:
             # Validate after each epoch
             val_losses = self.validate()
 
-            print(f"Epoch {epoch}/{self.num_epochs} - Train Loss: {train_losses['total_loss']:.4f}, Val Loss: {val_losses['total_loss']:.4f}, Beta: {train_losses['beta']:.4f}")
+            print(f"Epoch {epoch + 1}/{self.num_epochs} - Train Loss: {train_losses['total_loss']:.4f}, Val Loss: {val_losses['total_loss']:.4f}, Beta: {train_losses['beta']:.4f}")
             print(f"Train Recon Loss: {train_losses['recon_loss']:.4f}, Train KL Loss: {train_losses['kl_loss']:.4f}, Train Label Loss: {train_losses['label_loss']:.4f}")
 
             # Log validation metrics to TensorBoard
@@ -430,24 +447,27 @@ class VaeTrainer:
             self.writer.add_scalar('val/kl_loss', val_losses['kl_loss'], epoch)
             self.writer.add_scalar('val/label_loss', val_losses['label_loss'], epoch)
 
-            # Save checkpoint if validation loss improved
-            if val_losses['total_loss'] < self.best_val_loss or self.current_epoch % visualize_every == 0 or self.current_epoch == self.num_epochs - 1:
-                self.best_val_loss = val_losses['total_loss']
-                print(f"Validation loss improved to {self.best_val_loss:.4f}. Saving checkpoint...")
-                self.save_checkpoint(name=f'best_model.pth')
-                self.num_epochs_loss_not_improved = 0  # Reset the counter when loss improves
-
+            if val_losses['total_loss'] < self.best_val_loss:
+                if epoch >= self.beta_warmup_epochs:
+                    print(f"Validation loss improved to {val_losses['total_loss']:.4f}. Saving checkpoint...")
+                    self.best_val_loss = val_losses['total_loss']
+                    self.num_epochs_loss_not_improved = 0
+                    self.save_checkpoint(name='best_model.pth')
+            elif self.current_epoch % visualize_every == 0 or self.current_epoch == self.num_epochs - 1:
+                print(f"Epoch {self.current_epoch + 1}. Saving checkpoint...")
+                self.save_checkpoint(name=f'model.pth')
+                self.num_epochs_loss_not_improved += 1
             else:
-                self.num_epochs_loss_not_improved += 1  # Increment the counter when loss doesn't improve
+                self.num_epochs_loss_not_improved += 1
 
             # Early stopping
             if self.num_epochs_loss_not_improved >= self.early_stopping_patience:
-                print(f"Early stopping triggered after {self.current_epoch} epochs.")
+                print(f"Early stopping triggered after {self.current_epoch + 1} epochs.")
                 break
 
 
             # Visualize reconstructions every visualize_every epochs
-            if (epoch) % visualize_every == 0:
+            if (epoch + 1) % visualize_every == 0 or epoch == 0:
                 self.visualize_reconstructions()
             
         print("Training complete.")
