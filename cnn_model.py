@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class CNN(nn.Module):
-    def __init__(self, in_channels=3, input_size=128, num_classes=150, pooling=True):
+    def __init__(self, in_channels=3, input_size=128, num_classes=150, pooling=True, hidden_dim=32):
         super(CNN, self).__init__()
 
         self.pooling = pooling
@@ -28,8 +28,8 @@ class CNN(nn.Module):
 
         self.bn_flat = nn.BatchNorm1d(self.flatten_dim)
 
-        self.fc1 = nn.Linear(self.flatten_dim, 512)
-        self.fc2 = nn.Linear(512, num_classes)
+        self.fc1 = nn.Linear(self.flatten_dim, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, num_classes)
 
     def forward(self, x):
         if self.pooling:
@@ -55,7 +55,7 @@ class CNN(nn.Module):
         return x
     
 class CNN_1D(nn.Module):
-    def __init__(self, in_channels=1, input_size=128, num_classes=150, pooling=True):
+    def __init__(self, in_channels=1, input_size=128, num_classes=150, pooling=True, hidden_dim=512):
         super(CNN_1D, self).__init__()
 
         self.pooling = pooling
@@ -81,8 +81,8 @@ class CNN_1D(nn.Module):
 
         self.bn_flat = nn.BatchNorm1d(self.flatten_dim)
 
-        self.fc1 = nn.Linear(self.flatten_dim, 512)
-        self.fc2 = nn.Linear(512, num_classes)
+        self.fc1 = nn.Linear(self.flatten_dim, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, num_classes)
 
     def forward(self, x):
         if self.pooling:
@@ -101,7 +101,7 @@ class CNN_1D(nn.Module):
         return x
 
 class MLP(nn.Module):
-    def __init__(self, input_size=256, num_classes=150, hidden_sizes=[256, 256], dropout_rate=0.2):
+    def __init__(self, input_size=256, num_classes=150, hidden_sizes=[1024, 768], dropout_rate=0.2):
         super(MLP, self).__init__()
         self.input_size = input_size
         self.num_classes = num_classes

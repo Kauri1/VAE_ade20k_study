@@ -211,34 +211,43 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    train_CNN = False
-    train_CNN_1D = True
-    train_MLP = True
+    train_CNN = True
+    train_CNN_1D = False
+    train_MLP = False
 
     root_dir = "ade20k_data/ADEData2016"
     batch_size = 32
     num_workers = 4
-    num_epochs = 1000
+    num_epochs = 10000
 
-    n_common_labels = 5
+    n_common_labels = 2
     exclude_concepts = ["misc"]
 
     #params for 1D CNN and MLP
     latent_dirs = [
-        "experiments/max2_simple_T5_B0_2_L128_s/latents",
-        "experiments/max2_custom_T5_B0_4_L256/latents",
-        "experiments/max2_original_T5_B0_4_L256/latents",
+        "experiments/custom_T2_B0_2_L256/latents",
+        "experiments/custom_T2_B0_L256/latents",
+        "experiments/original_T2_B0_2_L256/latents",
+        "experiments/original_T2_B0_L256/latents",
+        "experiments/simple_T2_B0_2_L128/latents",
+        "experiments/simple_T2_B0_L128/latents",
         ]
     names = [
-        "max2_simple_T5_B0_2_L128_s",
-        "max2_custom_T5_B0_4_L256",
-        "max2_original_T5_B0_4_L256",
+        "custom_T2_B0_2_L256",
+        "custom_T2_B0_L256",
+        "original_T2_B0_2_L256",
+        "original_T2_B0_L256",
+        "simple_T2_B0_2_L128",
+        "simple_T2_B0_L128",
         ]
     
     vec_sizes = [
+        256,
+        256,
+        256,
+        256,
         128,
-        256,
-        256,
+        128,
         ]
 
     if train_CNN == True:
@@ -269,7 +278,7 @@ if __name__ == "__main__":
                             val_loader=val_loader, 
                             device=device,
                             save_dir="./cnn_models",
-                            model_save_name=f"cnn_experiment_T5_64",
+                            model_save_name=f"cnn_T2_64",
                             n_common_labels=n_common_labels,
                             exclude_concepts=exclude_concepts)
     
@@ -320,7 +329,7 @@ if __name__ == "__main__":
                                         val_loader=val_loader,
                                         device=device,
                                         save_dir="./cnn_models",
-                                        model_save_name=f"cnn_1d_experiment_{name}",
+                                        model_save_name=f"cnn_1d_{name}",
                                         n_common_labels=n_common_labels,
                                         exclude_concepts=exclude_concepts,
                                         latent_dir=latent_dir)
@@ -352,7 +361,7 @@ if __name__ == "__main__":
                                         val_loader=val_loader,
                                         device=device,
                                         save_dir="./cnn_models",
-                                        model_save_name=f"mlp_experiment_{name}",
+                                        model_save_name=f"mlp_{name}",
                                         n_common_labels=n_common_labels,
                                         exclude_concepts=exclude_concepts,
                                         latent_dir=latent_dir)

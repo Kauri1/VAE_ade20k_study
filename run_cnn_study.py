@@ -95,7 +95,7 @@ def evaluate_model(trainer: CNNTrainer, test_loader, config: dict):
     save_dir = Path(config['save_dir']) / model_name
     save_dir.mkdir(parents=True, exist_ok=True)
     
-    out_file = save_dir / "cnn_concept_metrics_test.json"
+    out_file = save_dir / f"{save_dir.name}.json"
     with open(out_file, "w") as f:
         json.dump(metrics_report, f, indent=4)
         
